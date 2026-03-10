@@ -1,0 +1,57 @@
+@startuml
+skinparam dpi 150
+actor 用户 as User
+
+rectangle "任务队列 & 调度" {
+  [任务队列 (Kafka)] as Queue
+  [调度器 (Scheduler / Autoscaler)] as Scheduler
+}
+
+cloud "算力集群" as Cluster {
+  node "算力组 A (并发复用/弹性伸缩)" as GroupA {
+    node "算力子组 2" as SubgroupA2 {
+      database "GPU 3\n(编码)" as GPU3
+      database "GPU 4\n(k分片检索)" as GPU4
+      database "GPU 5\n(k分片检索)" as GPU5
+    }
+
+    node "算力子组 1" as SubgroupA1 {
+      database "GPU 0\n(编码)" as GPU0
+      database "GPU 1\n(k分片检索)" as GPU1
+      database "GPU 2\n(k分片检索)" as GPU2
+    }
+  }
+  node "算力组 B (Replica/冷数据)" as GroupB {
+    node "CPU 检索节点 (冷数据/低优先级)" as CPUIndex
+  }
+}
+
+rectangle "数据库层" as DB {
+  database "Redis 高速缓存" as Redis
+  database "Postgres 元数据存储" as Postgres
+}
+
+rectangle "聚合 & 后处理" as Merge {
+  [结果合并器 (k-way merge, heap)]
+  [元数据拉取 & 响应构建]
+}
+
+User -> Queue : 请求 (query sequence)
+Queue --> Scheduler : 拉取 & 调度
+Scheduler --> GroupA : 分配到算力组
+
+GPU0 --> GPU1 : Tensor转移(NVLink)
+GPU0 --> GPU2 : Tensor转移(NVLink)
+GPU3 --> GPU4 : Tensor转移(NVLink)
+GPU3 --> GPU5 : Tensor转移(NVLink)
+
+GPU1 --> Merge : 返回 id + score
+GPU2 --> Merge
+GPU4 --> Merge
+GPU5 --> Merge
+
+Merge --> Redis : 尝试命中缓存 (query->topIDs)
+Redis <-- Postgres
+Redis --> User : 返回结果
+
+@enduml

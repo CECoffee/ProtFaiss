@@ -1,0 +1,28 @@
+#!/bin/bash
+#PBS -N faiss_build
+#PBS -q ai4090
+#PBS -l select=1:ncpus=16:ngpus=1:mem=128gb
+#PBS -l walltime=168:00:00
+#PBS -j oe
+#PBS -o logs/faiss_build.log
+
+# ============ 环境设置 ============
+echo "[$(date)] 作业开始执行"
+cd $PBS_O_WORKDIR
+echo "当前工作目录: $(pwd)"
+
+module load cuda/12.8
+module load anaconda3
+source activate faiss
+
+# 检查GPU状态
+echo "====== GPU状态 ======"
+nvidia-smi
+
+# ============ 执行任务 ============
+echo "====== 开始构建FAISS索引 ======"
+python build_faiss_index_by_csv.py
+
+# ============ 收尾 ============
+echo "====== 任务结束 ======"
+echo "[$(date)] 全部完成"
