@@ -9,6 +9,7 @@ from .config import ESM2_MODEL_DIR
 ESM2_TOKENIZER = None
 ESM2_MODEL = None
 
+
 def init_model(model_dir: str = None):
     global ESM2_TOKENIZER, ESM2_MODEL
     model_dir = model_dir or ESM2_MODEL_DIR
@@ -19,11 +20,13 @@ def init_model(model_dir: str = None):
             ESM2_MODEL.cuda()
     return ESM2_TOKENIZER, ESM2_MODEL
 
+
 def clean_sequence(sequence: str) -> str:
     """去掉 FASTA header 和空白并转大写"""
     cleaned = re.sub(r"^>.*\n", "", sequence, flags=re.MULTILINE)
     cleaned = re.sub(r"\s", "", cleaned).upper()
     return cleaned
+
 
 def blocking_encode(sequence_str: str, pooling: str = "mean"):
     """阻塞式编码：返回一个 torch.Tensor (B=1, dim)"""

@@ -6,8 +6,9 @@ __pycache__/
 .Python
 *.egg-info/
 dist/
-build/
+/build/
 .eggs/
+!app/build/
 *.egg
 .venv/
 venv/
@@ -21,6 +22,7 @@ env/
 
 # ── Large binary / model assets (not tracked in git) ─
 data/
+datasets/
 models/
 indices/
 
@@ -33,6 +35,10 @@ frontend/playwright-report/
 frontend/playwright-artifacts/
 frontend/.env.local
 frontend/.env.*.local
+
+# ── Legacy (kept locally, not tracked in git) ────────
+legacy/
+static_legacy/
 
 # ── OS ───────────────────────────────────────────────
 .DS_Store

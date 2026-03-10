@@ -14,6 +14,14 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/build': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/datasets': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
 })

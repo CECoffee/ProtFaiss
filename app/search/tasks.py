@@ -6,26 +6,28 @@ from typing import Dict, Any, List
 from concurrent.futures import ThreadPoolExecutor
 
 from .config import THREADPOOL_WORKERS, MAX_CONCURRENT_ENCODINGS
-from .encoder import clean_sequence, blocking_encode
+from app.core.encoder import clean_sequence, blocking_encode
 from .retriever import blocking_faiss_search
-from .db import blocking_db_get_rows
+from .db_queries import blocking_db_get_rows_from_table
 
 # executor & semaphore shared
 BLOCKING_EXECUTOR = ThreadPoolExecutor(max_workers=THREADPOOL_WORKERS)
 ENCODE_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_ENCODINGS)
 
-# in-memory task store (单机示例)
+# in-memory task store
 task_store: Dict[str, Dict[str, Any]] = {}
 task_store_lock = asyncio.Lock()
 
-async def submit_task(sequence: str, top_k: int = 5, pooling: str = "mean") -> str:
+
+async def submit_task(sequence: str, top_k: int = 5, pooling: str = "mean", db_table: str = "") -> str:
     task_id = str(uuid.uuid4())
     async with task_store_lock:
         task_store[task_id] = {"status": "pending", "result": None, "error": None, "created_at": time.time()}
-    asyncio.create_task(_background_task(task_id, sequence, top_k, pooling))
+    asyncio.create_task(_background_task(task_id, sequence, top_k, pooling, db_table))
     return task_id
 
-async def _background_task(task_id: str, sequence: str, top_k: int, pooling: str):
+
+async def _background_task(task_id: str, sequence: str, top_k: int, pooling: str, db_table: str):
     loop = asyncio.get_event_loop()
     try:
         cleaned = clean_sequence(sequence)
@@ -43,7 +45,9 @@ async def _background_task(task_id: str, sequence: str, top_k: int, pooling: str
 
         rows = []
         if ids:
-            rows = await loop.run_in_executor(BLOCKING_EXECUTOR, blocking_db_get_rows, ids)
+            rows = await loop.run_in_executor(
+                BLOCKING_EXECUTOR, blocking_db_get_rows_from_table, db_table, ids
+            )
         db_time = time.time()
 
         rows_map = {row[0]: row for row in rows}
@@ -80,12 +84,12 @@ async def _background_task(task_id: str, sequence: str, top_k: int, pooling: str
             task_store[task_id]["error"] = str(e)
         print("background task error:", e)
 
+
 async def get_task(task_id: str):
     async with task_store_lock:
         task = task_store.get(task_id)
         if not task:
             return None
-        # 返回副本以防外部修改
         return {
             "task_id": task_id,
             "status": task["status"],
@@ -93,6 +97,7 @@ async def get_task(task_id: str):
             "times": task.get("times"),
             "error": task.get("error")
         }
+
 
 def remove_task(task_id: str):
     task_store.pop(task_id)

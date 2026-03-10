@@ -8,7 +8,8 @@ DB_CONFIG: Dict[str, object] = {
     "password": "0909",
 }
 
-FAISS_SHARD_DIR = "indices/1m"
+MAX_DB_CONNS = 20
+
 ESM2_MODEL_DIR = "models/esm2"
 
 CORS_ORIGINS: List[str] = [
@@ -16,7 +17,6 @@ CORS_ORIGINS: List[str] = [
     "http://127.0.0.1:5173",
 ]
 
-MAX_DB_CONNS = 20
-MAX_CONCURRENT_ENCODINGS = 3
-THREADPOOL_WORKERS = 32
-FAISS_SEARCH_WORKERS = 8
+# Dataset builder paths
+DATASETS_ROOT = "datasets"
+REGISTRY_PATH = "datasets/registry.json"

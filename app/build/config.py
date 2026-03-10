@@ -1,0 +1,8 @@
+# HNSW index parameters
+HNSW_M = 32
+HNSW_EF_CONSTRUCTION = 200
+
+# IVF-PQ defaults
+IVFPQ_NLIST = 256
+IVFPQ_M = 64
+IVFPQ_NBITS = 8

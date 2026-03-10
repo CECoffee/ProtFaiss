@@ -65,22 +65,35 @@ python tools/insert_fasta_to_db.py
 
 ### Request Flow
 1. Client POSTs sequence to `/query/submit` → receives `task_id`
-2. Background worker calls `encoder.py` → ESM2 forward pass → 1280-dim vector
-3. `retriever.py` searches all FAISS shards in parallel → top-k candidates
-4. `db.py` fetches protein metadata from PostgreSQL for matching IDs
+2. Background worker calls `core/encoder.py` → ESM2 forward pass → 1280-dim vector
+3. `search/retriever.py` searches all FAISS shards in parallel → top-k candidates
+4. `search/db_queries.py` fetches protein metadata from PostgreSQL for matching IDs
 5. Client polls `GET /query/result/{task_id}` until status is `done`
 
 ### Key Modules (`app/`)
 
-| File | Role |
-|------|------|
-| `config.py` | All constants: paths, DB credentials, concurrency limits |
-| `encoder.py` | ESM2 model init + tokenize/embed logic |
-| `retriever.py` | Loads FAISS shards, runs parallel shard searches with thread locks |
-| `db.py` | PostgreSQL connection pool (psycopg2) |
-| `tasks.py` | In-memory task store + ThreadPoolExecutor background job runner |
-| `routes.py` | FastAPI route handlers (`/submit`, `/result`, `/health`) |
-| `main.py` | App factory, lifespan (model/shard/db init on startup) |
+```
+app/
+  main.py                    App factory, lifespan (model/shard/db init on startup)
+  core/
+    config.py                Shared constants: DB creds, ESM2 path, CORS, dataset paths
+    db.py                    PostgreSQL connection pool (psycopg2)
+    encoder.py               ESM2 model init + tokenize/embed logic
+  search/
+    config.py                Search concurrency limits, FAISS shard dir
+    retriever.py             Loads FAISS shards, runs parallel shard searches
+    tasks.py                 In-memory task store + ThreadPoolExecutor background pipeline
+    routes.py                FastAPI route handlers (/query/submit, /query/result)
+    db_queries.py            blocking_db_get_rows_from_table
+  build/
+    config.py                Index algorithm parameters (HNSW, IVF-PQ)
+    registry_sync.py         Sync file-locked registry I/O (cross-process)
+    dataset_registry.py      Async CRUD wrapper for registry.json
+    index_builder.py         FASTA parsing, batch encoding, flat/ivfpq/hnsw build
+    worker.py                Subprocess entry: python -m app.build.worker
+    routes.py                /build/submit, /build/status, /datasets CRUD
+    db_operations.py         blocking_create/insert/drop protein table
+```
 
 ### Concurrency Constraints
 - `MAX_CONCURRENT_ENCODINGS = 3` — semaphore limits simultaneous GPU forward passes
