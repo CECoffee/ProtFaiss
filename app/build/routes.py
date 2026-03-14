@@ -20,7 +20,7 @@ from typing import Dict, Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 
-from .config import IVFPQ_NLIST, IVFPQ_M, IVFPQ_NBITS, HNSW_M, HNSW_EF_CONSTRUCTION
+from .config import get_ivfpq_nlist, get_ivfpq_m, get_ivfpq_nbits, get_hnsw_m, get_hnsw_ef_construction
 from .dataset_registry import (
     create_dataset, get_dataset, update_dataset, delete_dataset, list_datasets,
     get_active_id, set_active_id,
@@ -71,14 +71,21 @@ async def build_submit(
     file: UploadFile = File(...),
     name: str = Form(...),
     algorithm: str = Form("flat"),
-    nlist: int = Form(IVFPQ_NLIST),
-    pq_m: int = Form(IVFPQ_M),
-    nbits: int = Form(IVFPQ_NBITS),
-    hnsw_m: int = Form(HNSW_M),
-    ef_construction: int = Form(HNSW_EF_CONSTRUCTION),
+    nlist: int = Form(None),
+    pq_m: int = Form(None),
+    nbits: int = Form(None),
+    hnsw_m: int = Form(None),
+    ef_construction: int = Form(None),
 ):
     if algorithm not in ("flat", "ivfpq", "hnsw"):
         raise HTTPException(status_code=400, detail="algorithm must be flat, ivfpq, or hnsw")
+
+    # Use config.yml defaults if not provided by caller
+    nlist = nlist if nlist is not None else get_ivfpq_nlist()
+    pq_m = pq_m if pq_m is not None else get_ivfpq_m()
+    nbits = nbits if nbits is not None else get_ivfpq_nbits()
+    hnsw_m = hnsw_m if hnsw_m is not None else get_hnsw_m()
+    ef_construction = ef_construction if ef_construction is not None else get_hnsw_ef_construction()
 
     _reap_finished_processes()
 
@@ -115,6 +122,7 @@ async def build_submit(
     await create_dataset(entry)
 
     # Write build config for the worker subprocess
+    from app.core.config_loader import get as cfg_get
     config = {
         "dataset_id": dataset_id,
         "fasta_path": fasta_path,
@@ -126,6 +134,8 @@ async def build_submit(
         "nbits": nbits,
         "hnsw_m": hnsw_m,
         "ef_construction": ef_construction,
+        "multi_gpu_enabled": cfg_get("gpu", "multi_gpu_enabled", True),
+        "fp16_lut": cfg_get("gpu", "fp16_lut", False),
     }
     config_path = os.path.join(dataset_dir, "build_config.json")
     with open(config_path, "w", encoding="utf-8") as f:

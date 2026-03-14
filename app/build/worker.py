@@ -14,11 +14,17 @@ This process is terminated by the main FastAPI server on shutdown.
 import argparse
 import json
 import sys
+import time
 
 
-def _patch(dataset_id: str, step: str, pct: int, **kwargs) -> None:
+def _patch(dataset_id: str, step: str, pct: float, detail: str = "", **kwargs) -> None:
     from app.build.registry_sync import sync_update_dataset
-    sync_update_dataset(dataset_id, {"progress_step": step, "progress_pct": pct, **kwargs})
+    sync_update_dataset(dataset_id, {
+        "progress_step": step,
+        "progress_pct": round(pct, 1),
+        "progress_detail": f"{step} {pct:.1f}%({detail})" if detail else f"{step} {pct:.1f}%",
+        **kwargs,
+    })
 
 
 def run_build_job(config: dict) -> None:
@@ -40,6 +46,15 @@ def run_build_job(config: dict) -> None:
     hnsw_m = config["hnsw_m"]
     ef_construction = config["ef_construction"]
 
+    # Throttle registry writes: at most once every 2 seconds
+    _last_write = [0.0]
+
+    def throttled_patch(step, pct, detail="", force=False, **kwargs):
+        now = time.monotonic()
+        if force or (now - _last_write[0]) >= 2.0:
+            _patch(dataset_id, step, pct, detail, **kwargs)
+            _last_write[0] = now
+
     try:
         _patch(dataset_id, "importing", 0)
 
@@ -53,6 +68,7 @@ def run_build_job(config: dict) -> None:
                 sync_update_dataset(dataset_id, {
                     "progress_step": "importing",
                     "progress_pct": 40,
+                    "progress_detail": "importing 40.0%",
                     "num_sequences": pct,
                 })
 
@@ -67,10 +83,10 @@ def run_build_job(config: dict) -> None:
         model = _encoder.ESM2_MODEL
         tokenizer = _encoder.ESM2_TOKENIZER
 
-        def scaled_cb(step, pct):
-            if pct is not None:
-                scaled = 40 + int(pct * 0.6)
-                sync_update_dataset(dataset_id, {"progress_step": "building", "progress_pct": scaled})
+        def scaled_cb(step, pct, detail=""):
+            # index_builder reports 0–100% for the build phase; map to 40–100%
+            scaled = round(40.0 + pct * 0.6, 1)
+            throttled_patch(step, scaled, detail)
 
         if algorithm == "flat":
             num_indexed = blocking_build_flat(sequences, model, tokenizer, index_dir, scaled_cb)
@@ -89,6 +105,7 @@ def run_build_job(config: dict) -> None:
             "status": "ready",
             "progress_step": "done",
             "progress_pct": 100,
+            "progress_detail": "done 100.0%",
             "num_indexed": num_indexed,
         })
         print(f"Build job {dataset_id} completed: {num_indexed} vectors indexed.")
@@ -100,6 +117,7 @@ def run_build_job(config: dict) -> None:
             "status": "error",
             "error_msg": str(e),
             "progress_step": "error",
+            "progress_detail": f"error: {e}",
         })
         sys.exit(1)
 
@@ -116,8 +134,10 @@ def main() -> None:
     from app.core.encoder import init_model
     from app.core.db import init_db_pool
     from app.core.config import ESM2_MODEL_DIR
+    from app.core.gpu import log_gpu_status
 
     print(f"Build worker starting for dataset {config['dataset_id']} ...")
+    log_gpu_status()
     init_model(ESM2_MODEL_DIR)
     init_db_pool()
 

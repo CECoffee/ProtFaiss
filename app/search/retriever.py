@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Callable, Optional
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -7,18 +7,24 @@ import faiss
 import numpy as np
 import torch
 
-from .config import FAISS_SHARD_DIR, FAISS_SEARCH_WORKERS
+from .config import FAISS_SHARD_DIR, get_faiss_search_workers, get_faiss_nprobe
 
 FAISS_SHARDS: List[faiss.Index] = []
 FAISS_SHARD_LOCKS: List[threading.Lock] = []
-GPU_RESOURCES = None
+
+# Per-GPU resources: list parallel to available devices
+_GPU_RESOURCES: List = []
 
 _SHARDS_SWAP_LOCK = threading.RLock()
 
 
 def load_shards(shard_dir: str = None):
-    """Load all .faiss shards into FAISS_SHARDS (CPU or GPU). Raises if none found."""
-    global FAISS_SHARDS, FAISS_SHARD_LOCKS, GPU_RESOURCES
+    """
+    Load all .faiss shards into FAISS_SHARDS.
+    Distributes shards across available GPUs (round-robin) when multi_gpu_enabled=true.
+    Falls back to CPU for any shard that fails to load onto GPU.
+    """
+    global FAISS_SHARDS, FAISS_SHARD_LOCKS, _GPU_RESOURCES
     shard_dir = shard_dir or FAISS_SHARD_DIR
     shard_paths = sorted([
         os.path.join(shard_dir, f)
@@ -28,20 +34,43 @@ def load_shards(shard_dir: str = None):
     if not shard_paths:
         raise RuntimeError("No faiss shards found in: " + shard_dir)
 
-    GPU_RESOURCES = faiss.StandardGpuResources() if torch.cuda.is_available() else None
+    from app.core.gpu import get_available_devices, create_faiss_gpu_resources, create_gpu_cloner_options
+    devices = get_available_devices()
+    nprobe = get_faiss_nprobe()
 
     FAISS_SHARDS.clear()
     FAISS_SHARD_LOCKS.clear()
+    new_resources = []
 
     for i, p in enumerate(shard_paths):
         idx_cpu = faiss.read_index(p)
-        if torch.cuda.is_available():
-            idx_gpu = faiss.index_cpu_to_gpu(GPU_RESOURCES, i % torch.cuda.device_count(), idx_cpu)
-            idx_gpu.nprobe = 8
-            FAISS_SHARDS.append(idx_gpu)
-        else:
+        loaded = False
+
+        if devices:
+            dev_id = devices[i % len(devices)]
+            try:
+                # Each shard gets its own StandardGpuResources — FAISS stack allocator
+                # is NOT thread-safe; sharing one res across shards on the same GPU
+                # causes StackDeviceMemory assertion failures under concurrent search.
+                res = create_faiss_gpu_resources(dev_id)
+                idx_gpu = faiss.index_cpu_to_gpu(res, dev_id, idx_cpu, create_gpu_cloner_options())
+                idx_gpu.nprobe = nprobe
+                FAISS_SHARDS.append(idx_gpu)
+                new_resources.append((dev_id, res))
+                loaded = True
+            except Exception as e:
+                print(f"[retriever] Shard {i} failed to load on GPU {dev_id}, using CPU: {e}")
+                torch.cuda.empty_cache()
+
+        if not loaded:
             FAISS_SHARDS.append(idx_cpu)
+            new_resources.append(None)
+
         FAISS_SHARD_LOCKS.append(threading.Lock())
+
+    _GPU_RESOURCES = new_resources
+    gpu_devs = [r[0] for r in new_resources if r is not None]
+    print(f"[retriever] Loaded {len(FAISS_SHARDS)} shards across devices: {gpu_devs or ['cpu']}")
 
 
 def swap_active_dataset(index_dir: str) -> int:
@@ -62,11 +91,16 @@ def _search_one_shard(index, query_vector, top_k, shard_idx=None):
         return [], []
 
 
-def blocking_faiss_search(query_vector, top_k: int):
+def blocking_faiss_search(
+    query_vector,
+    top_k: int,
+    progress_cb: Optional[Callable] = None,
+):
     """
     Blocking search across all loaded shards.
     Raises RuntimeError if no shards are loaded.
     Returns sorted [(distance, id), ...] up to top_k.
+    Optional progress_cb(completed, total) called after each shard completes.
     """
     if not FAISS_SHARDS:
         raise RuntimeError("No FAISS shards loaded. Activate a dataset first.")
@@ -81,7 +115,10 @@ def blocking_faiss_search(query_vector, top_k: int):
         query_np = query_vector.astype('float32', copy=False)
 
     results = []
-    max_workers = min(FAISS_SEARCH_WORKERS, max(1, len(FAISS_SHARDS)))
+    total_shards = len(FAISS_SHARDS)
+    completed = 0
+    max_workers = min(get_faiss_search_workers(), max(1, total_shards))
+
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         futures = [
             ex.submit(_search_one_shard, idx, query_np, top_k, si)
@@ -93,5 +130,8 @@ def blocking_faiss_search(query_vector, top_k: int):
                 for d, i in zip(D, I):
                     if int(i) >= 0:
                         results.append((float(d), int(i)))
+            completed += 1
+            if progress_cb:
+                progress_cb(completed, total_shards)
 
     return sorted(results, key=lambda x: x[0])[:top_k]

@@ -1,0 +1,36 @@
+# 可调用 POST /admin/reload-config 立即强制重载。
+
+gpu:
+  # 主开关：false = 单卡模式（GPU 0），适用于单卡机器或调试
+  multi_gpu_enabled: true
+  # ESM2 编码使用的设备："auto"（选显存最多的 GPU）| "cuda:0" | "cpu"
+  encoding_device: "auto"
+  # FAISS 使用的 GPU 列表："auto"（所有可用 GPU）| [0, 1, 2]
+  faiss_devices: "auto"
+  # FAISS StandardGpuResources 临时显存限制（MB）
+  faiss_temp_memory_mb: 1500
+  # GPU 显存预留（MB），低于此值时不选该 GPU
+  memory_reserve_mb: 500
+  # IVF-PQ 检索时使用 FP16 查找表（LUT）：降低显存占用，在支持 FP16 的 GPU 上可提速
+  # 代价是轻微精度损失；仅对 IVF-PQ 索引有效，Flat/HNSW 忽略此项
+  fp16_lut: true
+
+search:
+  faiss_search_workers: 8
+  max_concurrent_encodings: 3
+  threadpool_workers: 32
+  faiss_nprobe: 8
+
+build:
+  encoding_batch_size: 32
+  max_per_shard: 500000
+  db_batch_size: 500
+  # IVF-PQ 参数
+  ivfpq_nlist: 256
+  ivfpq_m: 48 # 5080极限
+  ivfpq_nbits: 8
+  # HNSW 参数
+  hnsw_m: 32
+  hnsw_ef_construction: 200
+  # 每次向 GPU 索引 add 的向量数（避免 OOM）
+  add_batch_size: 200000

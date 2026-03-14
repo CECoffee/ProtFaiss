@@ -153,8 +153,91 @@ if __name__ == "__main__":
     parser.add_argument("--concurrent", "-c", type=int, default=CONCURRENT, help="concurrent tasks to spawn")
     parser.add_argument("--url", type=str, default=BASE_URL, help="base URL of the API (scheme://host:port)")
     parser.add_argument("--timeout", type=float, default=PER_TASK_TIMEOUT, help="per-task timeout (s)")
+    parser.add_argument("--monitor-gpu", action="store_true", help="Poll /gpu/status every 5s during test")
+    parser.add_argument("--build-test", type=str, default=None, metavar="FASTA",
+                        help="Submit a build job with the given FASTA file and monitor progress")
     args = parser.parse_args()
 
     BASE_URL = args.url.rstrip("/")
     PER_TASK_TIMEOUT = args.timeout
-    asyncio.run(run_benchmark(args.concurrent))
+
+    if args.build_test:
+        asyncio.run(_run_build_test(args.build_test, BASE_URL))
+    elif args.monitor_gpu:
+        asyncio.run(_run_with_gpu_monitor(args.concurrent, BASE_URL))
+    else:
+        asyncio.run(run_benchmark(args.concurrent))
+
+
+async def _poll_gpu_status(base_url: str, stop_event: asyncio.Event):
+    """Background task: poll /gpu/status every 5 seconds."""
+    import aiohttp
+    async with aiohttp.ClientSession() as session:
+        while not stop_event.is_set():
+            try:
+                async with session.get(f"{base_url}/gpu/status", timeout=5) as r:
+                    if r.status == 200:
+                        data = await r.json()
+                        gpus = data.get("gpus", [])
+                        parts = [
+                            f"GPU{g['id']}: {g['used']}MB/{g['total']}MB"
+                            for g in gpus
+                        ]
+                        print(f"[GPU] {' | '.join(parts) if parts else 'no GPUs'}")
+            except Exception as e:
+                print(f"[GPU] status error: {e}")
+            await asyncio.sleep(5)
+
+
+async def _run_with_gpu_monitor(concurrent: int, base_url: str):
+    """Run benchmark with GPU monitoring in background."""
+    stop_event = asyncio.Event()
+    monitor_task = asyncio.create_task(_poll_gpu_status(base_url, stop_event))
+    try:
+        await run_benchmark(concurrent)
+    finally:
+        stop_event.set()
+        await monitor_task
+
+
+async def _run_build_test(fasta_path: str, base_url: str):
+    """Submit a build job and monitor progress until done."""
+    import aiohttp
+    print(f"[build-test] Submitting build job with {fasta_path} ...")
+    async with aiohttp.ClientSession() as session:
+        with open(fasta_path, "rb") as f:
+            data = aiohttp.FormData()
+            data.add_field("file", f, filename="input.fasta", content_type="text/plain")
+            data.add_field("name", "stress-test-build")
+            data.add_field("algorithm", "flat")
+            async with session.post(f"{base_url}/build/submit", data=data, timeout=30) as r:
+                if r.status != 200:
+                    print(f"[build-test] Submit failed: {r.status} {await r.text()}")
+                    return
+                result = await r.json()
+                dataset_id = result["dataset_id"]
+                print(f"[build-test] Job submitted: {dataset_id}")
+
+        prev_detail = ""
+        prev_pct = -1.0
+        while True:
+            await asyncio.sleep(2)
+            async with session.get(f"{base_url}/build/status/{dataset_id}", timeout=10) as r:
+                if r.status != 200:
+                    print(f"[build-test] Status error: {r.status}")
+                    break
+                entry = await r.json()
+                status = entry.get("status")
+                pct = entry.get("progress_pct", 0)
+                detail = entry.get("progress_detail", "")
+
+                if detail != prev_detail or abs(pct - prev_pct) >= 1.0:
+                    print(f"[build-test] {status} | {detail}")
+                    prev_detail = detail
+                    prev_pct = pct
+
+                if status in ("ready", "error"):
+                    print(f"[build-test] Final status: {status}")
+                    if status == "error":
+                        print(f"[build-test] Error: {entry.get('error_msg')}")
+                    break

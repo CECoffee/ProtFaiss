@@ -11,6 +11,8 @@ from app.search.retriever import load_shards, FAISS_SHARDS
 from app.core.db import init_db_pool, close_db_pool
 from app.core.config import ESM2_MODEL_DIR, CORS_ORIGINS, DATASETS_ROOT
 from app.build.dataset_registry import load_registry, update_dataset, get_active_id, get_dataset, set_active_id
+from app.core import config_loader
+from app.core import gpu as _gpu
 
 app = FastAPI(title="Protein Search")
 app.add_middleware(
@@ -26,6 +28,7 @@ app.include_router(build_router)
 @app.on_event("startup")
 async def startup():
     print("startup: init model, init db pool ...")
+    _gpu.log_gpu_status()
     init_model(ESM2_MODEL_DIR)
     init_db_pool()
 
@@ -79,6 +82,24 @@ def health():
         "shards": len(FAISS_SHARDS),
         "active_dataset_id": sync_get_active_id(),
     }
+
+
+@app.get("/gpu/status")
+def gpu_status():
+    """返回所有 GPU 的显存状态及当前多卡配置。"""
+    return {
+        "gpus": _gpu.get_all_gpu_status(),
+        "available_devices": _gpu.get_available_devices(),
+        "encoding_device": str(_gpu.get_encoding_device()),
+        "multi_gpu_enabled": config_loader.get("gpu", "multi_gpu_enabled", True),
+    }
+
+
+@app.post("/admin/reload-config")
+def reload_config():
+    """强制重载 config.yml，立即生效。返回新配置内容。"""
+    new_cfg = config_loader.force_reload()
+    return {"status": "reloaded", "config": new_cfg}
 
 
 # uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

@@ -1,263 +1,258 @@
+"""
+tools/build_index_ivfpq.py — 独立 IVF-PQ 索引构建工具
+
+使用 app.core.gpu 进行多 GPU 管理，支持：
+- 自动选择最空闲 GPU（--gpu auto）或指定 GPU（--gpu 0）
+- 多卡并行分片构建（受 config.yml gpu.multi_gpu_enabled 控制）
+- OOM 自动 fallback 到 CPU
+- tqdm 实时进度显示
+
+用法：
+  python tools/build_index_ivfpq.py --csv ../data/proteins.csv --out ../indices/10m
+  python tools/build_index_ivfpq.py --csv ../data/proteins.csv --out ../indices/10m --gpu 1
+"""
+import argparse
+import math
+import os
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
+
 import faiss
 import numpy as np
 import pandas as pd
-import time
-from transformers import AutoTokenizer, EsmModel
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-import os
-import math
+from transformers import AutoTokenizer, EsmModel
 
-# ------------------------
-# CONFIG（可按需调整）
-# ------------------------
-D = 1280                # ESM2 embedding 维度
-ENCODING_BATCH = 64    # ESM2 编码批次（可根据 GPU 显存调小）
-MAX_PER_SHARD = 1000000  # 每个分片最大序列数（你已经有分片逻辑）
-N_LIST = 4096           # IVF 的 coarse centroids 数量（可调）
-M = 64                  # PQ 的子量化数
-NBITS = 8               # 每子空间位数
-TRAIN_SAMPLE_SIZE = 200_000  # 用于训练 IVFPQ 的样本数（从每个分片中抽样）
-ADD_BATCH_SIZE = 200_000     # 每次向 GPU 索引 add 的向量数（避免 OOM）
-GPU_ID = 0              # 使用哪个 GPU（多 GPU 可扩展）
-USE_HNSW_QUANTIZER = False  # 是否使用 HNSW 作为 coarse quantizer（若 True，可能需要检查 faiss-gpu 支持）
+# Allow importing app modules when run from project root
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-model_dir = "../models/esm2"
+from app.core.config import ESM2_MODEL_DIR
+from app.core.config_loader import get as cfg_get
+from app.core.gpu import (
+    get_available_devices, get_encoding_device,
+    create_faiss_gpu_resources, log_gpu_status,
+)
 
-tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True)
-model = EsmModel.from_pretrained(model_dir, local_files_only=True)
-# ------------------------
-# 1. ESM2编码函数（保持原逻辑）
-# ------------------------
-def collate_fn(batch, tokenizer):
-    return tokenizer(batch, return_tensors="pt", padding=True, max_length=2048, truncation=True)
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
 
-def my_esm2_batch_encoder(data, batch_size=ENCODING_BATCH, pooling='mean', num_workers=4):
-    """
-    data: list[str] of sequences
-    返回: np.ndarray (N, D) dtype=float32
-    """
+parser = argparse.ArgumentParser(description="Build sharded IVF-PQ FAISS index from CSV")
+parser.add_argument("--csv", default="../data/proteins_mock_10m.csv", help="Input CSV file")
+parser.add_argument("--seq-col", default="sequence", help="Column name for sequences")
+parser.add_argument("--out", default="../indices/10m", help="Output directory for shards")
+parser.add_argument("--gpu", default="auto", help='"auto" | GPU device id (int) | "cpu"')
+parser.add_argument("--nlist", type=int, default=None, help="IVF nlist (default: from config.yml)")
+parser.add_argument("--pq-m", type=int, default=None, help="PQ sub-spaces (default: from config.yml)")
+parser.add_argument("--nbits", type=int, default=8, help="PQ bits per sub-space")
+parser.add_argument("--nprobe", type=int, default=16, help="nprobe for search")
+parser.add_argument("--batch-size", type=int, default=None, help="Encoding batch size (default: from config.yml)")
+parser.add_argument("--max-per-shard", type=int, default=None, help="Max vectors per shard (default: from config.yml)")
+args = parser.parse_args()
 
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
+NLIST = args.nlist or cfg_get("build", "ivfpq_nlist", 256)
+PQ_M = args.pq_m or cfg_get("build", "ivfpq_m", 64)
+NBITS = args.nbits
+NPROBE = args.nprobe
+ENCODING_BATCH = args.batch_size or cfg_get("build", "encoding_batch_size", 32)
+MAX_PER_SHARD = args.max_per_shard or cfg_get("build", "max_per_shard", 1_000_000)
+ADD_BATCH_SIZE = cfg_get("build", "add_batch_size", 200_000)
+TRAIN_SAMPLE = max(NLIST * 40, min(200_000, MAX_PER_SHARD))
+D = 1280
+
+# ---------------------------------------------------------------------------
+# GPU setup
+# ---------------------------------------------------------------------------
+
+log_gpu_status()
+
+if args.gpu == "auto":
+    enc_device = get_encoding_device()
+    faiss_devices = get_available_devices()
+elif args.gpu == "cpu":
+    enc_device = torch.device("cpu")
+    faiss_devices = []
+else:
+    gpu_id = int(args.gpu)
+    enc_device = torch.device(f"cuda:{gpu_id}")
+    faiss_devices = [gpu_id]
+
+print(f"[config] encoding_device={enc_device}, faiss_devices={faiss_devices or ['cpu']}")
+print(f"[config] nlist={NLIST}, pq_m={PQ_M}, nbits={NBITS}, batch={ENCODING_BATCH}, max_per_shard={MAX_PER_SHARD}")
+
+# ---------------------------------------------------------------------------
+# Model init
+# ---------------------------------------------------------------------------
+
+print(f"Loading ESM2 model from {ESM2_MODEL_DIR} ...")
+tokenizer = AutoTokenizer.from_pretrained(ESM2_MODEL_DIR, local_files_only=True)
+model = EsmModel.from_pretrained(ESM2_MODEL_DIR, local_files_only=True)
+model.to(enc_device)
+model.eval()
+
+# ---------------------------------------------------------------------------
+# Encoding
+# ---------------------------------------------------------------------------
+
+def _collate(batch, tok):
+    return tok(batch, return_tensors="pt", padding=True, max_length=2048, truncation=True)
+
+
+def encode_sequences(sequences: list) -> np.ndarray:
+    """OOM-safe batch encoding with tqdm progress."""
+    device = next(model.parameters()).device
     embeddings = []
-    eval_loader = DataLoader(
-        data,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        collate_fn=partial(collate_fn, tokenizer=tokenizer)
-    )
+    batch_size = ENCODING_BATCH
+    total = len(sequences)
+    done = 0
 
-    with torch.no_grad():
-        for batch in tqdm(eval_loader, desc="Encoding"):
-            input_ids = batch["input_ids"].cuda()
-            attention_mask = batch["attention_mask"].cuda()
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            features = outputs.last_hidden_state  # (B, L, D)
-            masked_features = features * attention_mask.unsqueeze(2)
-            sum_features = torch.sum(masked_features, dim=1)
+    with tqdm(total=total, desc="Encoding", unit="seq") as pbar:
+        i = 0
+        while i < total:
+            batch_seqs = sequences[i: i + batch_size]
+            batch = _collate(batch_seqs, tokenizer)
+            input_ids = batch["input_ids"]
+            attention_mask = batch["attention_mask"]
 
-            if pooling == 'mean':
-                pooled_features = sum_features / attention_mask.sum(dim=1, keepdim=True)
-            elif pooling == 'max':
-                pooled_features = torch.max(masked_features, dim=1).values
-            elif pooling == 'sum':
-                pooled_features = sum_features
-            else:
-                pooled_features = features[:, 0, :]  # 默认取第一个 token
+            for attempt in range(4):
+                try:
+                    ids = input_ids.to(device)
+                    mask = attention_mask.to(device)
+                    with torch.no_grad():
+                        outputs = model(input_ids=ids, attention_mask=mask)
+                    features = outputs.last_hidden_state
+                    masked = features * mask.unsqueeze(2)
+                    pooled = masked.sum(dim=1) / mask.sum(dim=1, keepdim=True)
+                    embeddings.append(pooled.detach().cpu().numpy())
+                    done += len(batch_seqs)
+                    pbar.update(len(batch_seqs))
+                    pbar.set_postfix({"batch": batch_size})
+                    break
+                except torch.cuda.OutOfMemoryError:
+                    torch.cuda.empty_cache()
+                    batch_size = max(1, batch_size // 2)
+                    print(f"\n[OOM] Reducing batch_size to {batch_size}")
+                    batch_seqs = sequences[i: i + batch_size]
+                    batch = _collate(batch_seqs, tokenizer)
+                    input_ids = batch["input_ids"]
+                    attention_mask = batch["attention_mask"]
 
-            embeddings.append(pooled_features.detach().cpu().numpy())
+            i += len(batch_seqs)
 
-    embeddings = np.concatenate(embeddings, axis=0).astype('float32')
-    torch.cuda.empty_cache()
-    return embeddings
-
-# ------------------------
-# 2. IVFPQ 索引构建（GPU 训练 + GPU 添加）
-# ------------------------
-def build_ivfpq_index_on_gpu(vectors: np.ndarray,
-                             nlist=N_LIST,
-                             m=M,
-                             nbits=NBITS,
-                             gpu_id=GPU_ID,
-                             train_sample_size=TRAIN_SAMPLE_SIZE,
-                             add_batch_size=ADD_BATCH_SIZE,
-                             nprobe=16):
-    """
-    在 GPU 上训练并添加数据的 IVFPQ 构建函数。
-    vectors: np.ndarray (N, D) float32
-    返回: CPU 索引（faiss.Index）已训练并包含所有向量，适合写入磁盘。
-    """
-
-    assert vectors.dtype == np.float32, "vectors must be float32"
-    N, D_local = vectors.shape
-    assert D_local == D, f"输入维度 {D_local} 不等于 D={D}"
-
-    # 1) coarse quantizer
-    if USE_HNSW_QUANTIZER:
-        # 注意：某些 faiss-gpu 构建/版本对 HNSW coarse quantizer 的支持有限，如果遇到问题请改为 IndexFlatL2
-        quantizer = faiss.IndexHNSWFlat(D, 32)
-    else:
-        quantizer = faiss.IndexFlatL2(D)
-
-    # 2) 在 CPU 上创建 IndexIVFPQ
-    index_cpu = faiss.IndexIVFPQ(quantizer, D, nlist, m, nbits)
-    index_cpu.nprobe = nprobe
-
-    # 3) 转到 GPU（创建 GPU 资源）
-    res = faiss.StandardGpuResources()
-    # 如果有多卡场景，这里可创建多个 resources 或使用指定 device map
-    print("将索引从 CPU 转到 GPU ...")
-    index_gpu = faiss.index_cpu_to_gpu(res, gpu_id, index_cpu)
-
-    # 4) 训练：选取样本用于训练（随机抽样）
-    sample_size = min(N, train_sample_size)
-    if sample_size < nlist:
-        raise ValueError(f"train sample ({sample_size}) must be >= nlist ({nlist})")
-    # 随机采样以避免顺序偏差
-    perm = np.random.permutation(N)[:sample_size]
-    train_samples = vectors[perm].copy()
-    print(f"GPU 上训练索引：样本数 {sample_size} / {N}")
-    index_gpu.train(train_samples)
-
-    # 5) 分批 add 到 GPU 索引（避免一次性 OOM）
-    print("开始分批将向量 add 到 GPU 索引 ...")
-    added = 0
-    for i in tqdm(range(0, N, add_batch_size), desc="Adding batches"):
-        batch = vectors[i: i + add_batch_size]
-        # 保证 C-contiguous
-        if not batch.flags['C_CONTIGUOUS']:
-            batch = np.ascontiguousarray(batch)
-        index_gpu.add(batch)  # 在 GPU 上添加
-        added += batch.shape[0]
-        # 释放显存碎片
-    print(f"全部 add 完成，总计 {added} 向量")
-
-    # 6) 把 GPU 索引搬回 CPU 以便保存
-    print("将 GPU 索引迁回 CPU 并返回 ...")
-    index_cpu_final = faiss.index_gpu_to_cpu(index_gpu)
-    index_cpu_final.nprobe = nprobe
-    return index_cpu_final
+    return np.concatenate(embeddings, axis=0).astype("float32")
 
 
-def build_ivfpq_index_on_cpu(vectors: np.ndarray,
-                             nlist=N_LIST,
-                             m=M,
-                             nbits=NBITS,
-                             train_sample_size=TRAIN_SAMPLE_SIZE,
-                             add_batch_size=ADD_BATCH_SIZE,
-                             nprobe=16):
-    """
-    在 CPU 上训练并添加数据的 IVFPQ 构建函数（不使用 GPU）。
-    vectors: np.ndarray (N, D) float32
-    返回: CPU 索引（faiss.Index）已训练并包含所有向量，适合写入磁盘。
-    """
-    assert vectors.dtype == np.float32, "vectors must be float32"
-    N, D_local = vectors.shape
-    assert D_local == D, f"输入维度 {D_local} 不等于 D={D}"
+# ---------------------------------------------------------------------------
+# Single-shard IVF-PQ build
+# ---------------------------------------------------------------------------
 
-    # 1) coarse quantizer（CPU 上）
-    if USE_HNSW_QUANTIZER:
-        # 注意：IndexHNSWFlat 在 CPU 上也是支持的
-        quantizer = faiss.IndexHNSWFlat(D, 32)
-    else:
-        quantizer = faiss.IndexFlatL2(D)
+def build_shard(shard_id: int, vecs: np.ndarray, gpu_id: int, out_dir: str) -> str:
+    n = vecs.shape[0]
+    quantizer = faiss.IndexFlatL2(D)
+    index_cpu = faiss.IndexIVFPQ(quantizer, D, NLIST, PQ_M, NBITS)
+    index_cpu.nprobe = NPROBE
 
-    # 2) 在 CPU 上创建 IndexIVFPQ（注意：quantizer 已在 CPU）
-    index_cpu = faiss.IndexIVFPQ(quantizer, D, nlist, m, nbits)
-    index_cpu.nprobe = nprobe
+    sample_size = min(n, TRAIN_SAMPLE)
+    if sample_size < NLIST:
+        sample_size = n
+    perm = np.random.permutation(n)[:sample_size]
+    train_vecs = np.ascontiguousarray(vecs[perm])
 
-    # 3) 训练：选取样本用于训练（随机抽样）
-    sample_size = min(N, train_sample_size)
-    if sample_size < nlist:
-        raise ValueError(f"train sample ({sample_size}) must be >= nlist ({nlist})")
-    perm = np.random.permutation(N)[:sample_size]
-    train_samples = vectors[perm].copy()
-    # 确保 C-contiguous
-    if not train_samples.flags['C_CONTIGUOUS']:
-        train_samples = np.ascontiguousarray(train_samples)
+    use_gpu = gpu_id >= 0 and torch.cuda.is_available()
+    if use_gpu:
+        res = create_faiss_gpu_resources(gpu_id)
+        try:
+            index_gpu = faiss.index_cpu_to_gpu(res, gpu_id, index_cpu)
+            print(f"[shard {shard_id}] Training on GPU {gpu_id} ({sample_size} samples)...")
+            index_gpu.train(train_vecs)
 
-    print(f"CPU 上训练索引：样本数 {sample_size} / {N}")
-    index_cpu.train(train_samples)  # 在 CPU 上训练
+            added = 0
+            with tqdm(total=n, desc=f"shard {shard_id} adding", unit="vec", leave=False) as pbar:
+                for i in range(0, n, ADD_BATCH_SIZE):
+                    batch = np.ascontiguousarray(vecs[i: i + ADD_BATCH_SIZE])
+                    index_gpu.add(batch)
+                    added += batch.shape[0]
+                    pbar.update(batch.shape[0])
+                    pbar.set_postfix({"added": f"{added}/{n}"})
 
-    # 4) 分批 add 到 CPU 索引（避免一次性 OOM）
-    print("开始分批将向量 add 到 CPU 索引 ...")
-    added = 0
-    for i in tqdm(range(0, N, add_batch_size), desc="Adding batches (CPU)"):
-        batch = vectors[i: i + add_batch_size]
-        if not batch.flags['C_CONTIGUOUS']:
-            batch = np.ascontiguousarray(batch)
-        index_cpu.add(batch)
-        added += batch.shape[0]
-    print(f"全部 add 完成，总计 {added} 向量")
+            index_cpu = faiss.index_gpu_to_cpu(index_gpu)
+            index_cpu.nprobe = NPROBE
+        except torch.cuda.OutOfMemoryError:
+            torch.cuda.empty_cache()
+            print(f"[shard {shard_id}] OOM on GPU {gpu_id}, falling back to CPU.")
+            use_gpu = False
 
-    # 5) 返回已经训练并填充的 CPU 索引
-    index_cpu.nprobe = nprobe
-    return index_cpu
+    if not use_gpu:
+        print(f"[shard {shard_id}] Training on CPU ({sample_size} samples)...")
+        index_cpu.train(train_vecs)
+        added = 0
+        with tqdm(total=n, desc=f"shard {shard_id} adding (CPU)", unit="vec", leave=False) as pbar:
+            for i in range(0, n, ADD_BATCH_SIZE):
+                batch = np.ascontiguousarray(vecs[i: i + ADD_BATCH_SIZE])
+                index_cpu.add(batch)
+                added += batch.shape[0]
+                pbar.update(batch.shape[0])
 
-# ------------------------
-# 3. 主流程：自动分片并构建每个分片索引
-# ------------------------
-def build_sharded_faiss(csv_path="proteins.csv", seq_column="sequence", output_dir="../indices/10m"):
+    shard_path = os.path.join(out_dir, f"shard_{shard_id:03d}.faiss")
+    faiss.write_index(index_cpu, shard_path)
+    print(f"[shard {shard_id}] Saved to {shard_path}")
+    return shard_path
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def build_sharded_faiss(csv_path: str, seq_column: str, output_dir: str):
     os.makedirs(output_dir, exist_ok=True)
     df = pd.read_csv(csv_path)
-    n = len(df)
     if seq_column not in df.columns:
-        raise ValueError(f"CSV 中找不到列 '{seq_column}'")
+        raise ValueError(f"Column '{seq_column}' not found in CSV")
 
-    # 动态计算分片数量
+    n = len(df)
     n_shards = math.ceil(n / MAX_PER_SHARD)
     shard_size = math.ceil(n / n_shards)
-    print(f"总数据量 {n}，分片 {n_shards}，每片约 {shard_size} 条。")
+    print(f"Total: {n} sequences, {n_shards} shards, ~{shard_size} per shard")
 
     start_all = time.time()
-    total = 0
 
-    for shard_id in range(n_shards):
-        shard_df = df.iloc[shard_id * shard_size : (shard_id + 1) * shard_size]
-        print(f"\n=== 构建分片 {shard_id+1}/{n_shards} （{len(shard_df)} 条） ===")
+    # Encode all sequences
+    sequences = df[seq_column].tolist()
+    all_vecs = encode_sequences(sequences)
+    model.cpu()
+    torch.cuda.empty_cache()
+    print(f"Encoding done: {all_vecs.shape[0]} vectors")
 
-        model.cuda()
-        model.eval()
+    # Build shards (parallel if multi-GPU)
+    shard_chunks = [
+        np.ascontiguousarray(all_vecs[sid * shard_size: (sid + 1) * shard_size])
+        for sid in range(n_shards)
+        if all_vecs[sid * shard_size: (sid + 1) * shard_size].shape[0] > 0
+    ]
 
-        # 1) 编码（按小批次）
-        all_vecs = []
-        for i in range(0, len(shard_df), ENCODING_BATCH):
-            seqs = shard_df[seq_column].iloc[i:i+ENCODING_BATCH].tolist()
-            emb = my_esm2_batch_encoder(seqs)
-            all_vecs.append(emb)
-        all_vecs = np.concatenate(all_vecs, axis=0).astype('float32')
-        model.cpu()
-        torch.cuda.empty_cache()
-        print(f"分片 {shard_id} 编码完成，向量数 {all_vecs.shape[0]}")
+    devices = faiss_devices if faiss_devices else [-1]
+    max_workers = max(1, len(devices))
 
-        # 2) 在 GPU 上训练并构建 IVFPQ（训练 + add 都在 GPU 上完成）
-        index = build_ivfpq_index_on_gpu(
-            all_vecs,
-            nlist=N_LIST,
-            m=M,
-            nbits=NBITS,
-            gpu_id=GPU_ID,
-            train_sample_size=TRAIN_SAMPLE_SIZE,
-            add_batch_size=ADD_BATCH_SIZE,
-            nprobe=16
-        )
+    print(f"Building {len(shard_chunks)} shards with {max_workers} worker(s) on devices {devices} ...")
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {
+            ex.submit(build_shard, sid, chunk, devices[sid % len(devices)], output_dir): sid
+            for sid, chunk in enumerate(shard_chunks)
+        }
+        for fut in as_completed(futures):
+            fut.result()
 
-        # 3) 保存索引到磁盘（CPU 索引）
-        shard_path = os.path.join(output_dir, f"shard_{shard_id:03d}.faiss")
-        faiss.write_index(index, shard_path)
-        print(f"✅ 已保存 {shard_path}")
+    del all_vecs
+    print(f"\nAll done. Total: {n} sequences, elapsed: {time.time() - start_all:.1f}s")
 
-        total += len(shard_df)
-        # 清理
-        del all_vecs
-        torch.cuda.empty_cache()
 
-    print(f"\n全部完成，共 {total} 条，耗时 {time.time() - start_all:.2f} 秒。")
-
-# ------------------------
-# 4. 入口
-# ------------------------
 if __name__ == "__main__":
-    build_sharded_faiss("../data/proteins_mock_10m.csv", seq_column="sequence")
+    build_sharded_faiss(args.csv, args.seq_col, args.out)
