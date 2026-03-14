@@ -34,3 +34,23 @@ build:
   hnsw_ef_construction: 200
   # 每次向 GPU 索引 add 的向量数（避免 OOM）
   add_batch_size: 200000
+
+scheduler:
+  # 系统 GPU 总 slot 数（逻辑限流，可小于物理 GPU 数）
+  total_gpu_slots: 1
+  # 默认用户 GPU 配额（超管可修改）
+  default_user_gpu_quota: 1
+  # 调度循环间隔（秒）
+  poll_interval: 0.5
+  # search 任务 GPU 占用超时（秒）
+  search_gpu_timeout: 60
+  # build 任务 GPU 占用超时（秒）
+  build_gpu_timeout: 86400
+  # fair-share 每日衰减因子
+  decay_factor: 0.95
+  # search 基础优先级（越小越优先）
+  search_base_priority: 10
+  # build 基础优先级
+  build_base_priority: 100
+  # 同时驻留 GPU 的数据集 FAISS 缓存数
+  max_cached_datasets: 4

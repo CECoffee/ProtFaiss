@@ -6,23 +6,28 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.search.routes import router as api_router
 from app.build.routes import router as build_router, terminate_build_processes
+from app.auth.routes import router as auth_router
+from app.users.routes import router as users_router
+from app.scheduler.routes import router as scheduler_router
 from app.core.encoder import init_model
 from app.search.retriever import load_shards, FAISS_SHARDS
 from app.core.db import init_db_pool, close_db_pool
 from app.core.config import ESM2_MODEL_DIR, CORS_ORIGINS, DATASETS_ROOT
-from app.build.dataset_registry import load_registry, update_dataset, get_active_id, get_dataset, set_active_id
 from app.core import config_loader
 from app.core import gpu as _gpu
 
-app = FastAPI(title="Protein Search")
+app = FastAPI(title="FaaIndex — Protein Search")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(auth_router)
 app.include_router(api_router)
 app.include_router(build_router)
+app.include_router(users_router)
+app.include_router(scheduler_router)
 
 
 @app.on_event("startup")
@@ -32,73 +37,82 @@ async def startup():
     init_model(ESM2_MODEL_DIR)
     init_db_pool()
 
+    # Run DB migration and ensure admin user exists
+    from app.auth.init_admin import ensure_admin
+    ensure_admin()
+
     os.makedirs(DATASETS_ROOT, exist_ok=True)
 
-    # Load active dataset's shards if an active dataset exists
-    active_id = await get_active_id()
-    if active_id:
-        entry = await get_dataset(active_id)
-        if entry and entry.get("status") == "ready":
-            try:
-                load_shards(entry["index_dir"])
-                print(f"startup: loaded {len(FAISS_SHARDS)} shards for dataset {active_id}")
-            except Exception as e:
-                print(f"startup: failed to load shards for active dataset {active_id}: {e}")
-        else:
-            print(f"startup: active dataset {active_id} is not ready — no shards loaded")
-    else:
-        print("startup: no active dataset — search disabled until a dataset is activated")
+    # Initialize GPU pool from config
+    from app.scheduler.gpu_pool import init_pool
+    total_slots = config_loader.get("scheduler", "total_gpu_slots", 4)
+    init_pool(total_slots)
+    print(f"startup: GPU pool initialized with {total_slots} slots")
 
-    # Mark stale 'building' entries as 'error' (server restarted mid-build)
+    # Start GPU scheduler
+    from app.scheduler.scheduler import init_scheduler
+    scheduler = init_scheduler()
+    scheduler.start()
+
+    # Mark stale 'building' datasets as error
     try:
-        registry = await load_registry()
-        for entry in registry.get("datasets", []):
+        from app.build.dataset_db import blocking_list_all_datasets, blocking_update_dataset
+        all_datasets = blocking_list_all_datasets()
+        for entry in all_datasets:
             if entry.get("status") == "building":
-                await update_dataset(entry["id"], {
+                blocking_update_dataset(entry["id"], {
                     "status": "error",
                     "error_msg": "Server restarted during build",
                     "progress_step": "error",
                 })
                 print(f"startup: marked stale build {entry['id']} as error")
     except Exception as e:
-        print(f"startup: registry cleanup error: {e}")
+        print(f"startup: dataset cleanup error: {e}")
 
-    print("startup done: shards:", len(FAISS_SHARDS))
+    print("startup done")
 
 
 @app.on_event("shutdown")
 def shutdown():
-    print("shutdown: terminating build subprocesses ...")
-    terminate_build_processes()
+    print("shutdown: stopping GPU scheduler ...")
+    from app.scheduler.scheduler import get_scheduler
+    sched = get_scheduler()
+    if sched:
+        sched.stop()
     print("shutdown: closing db pool ...")
     close_db_pool()
 
 
 @app.get("/health")
 def health():
-    from app.build.registry_sync import sync_get_active_id
+    from app.scheduler.gpu_pool import get_pool as get_gpu_pool
     return {
         "status": "ok",
         "shards": len(FAISS_SHARDS),
-        "active_dataset_id": sync_get_active_id(),
+        "gpu_pool": get_gpu_pool().snapshot(),
     }
 
 
 @app.get("/gpu/status")
 def gpu_status():
-    """返回所有 GPU 的显存状态及当前多卡配置。"""
+    from app.scheduler.gpu_pool import get_pool as get_gpu_pool
     return {
         "gpus": _gpu.get_all_gpu_status(),
         "available_devices": _gpu.get_available_devices(),
         "encoding_device": str(_gpu.get_encoding_device()),
         "multi_gpu_enabled": config_loader.get("gpu", "multi_gpu_enabled", True),
+        "pool": get_gpu_pool().snapshot(),
     }
 
 
 @app.post("/admin/reload-config")
 def reload_config():
-    """强制重载 config.yml，立即生效。返回新配置内容。"""
+    """强制重载 config.yml，立即生效。"""
     new_cfg = config_loader.force_reload()
+    # Update GPU pool size if changed
+    from app.scheduler.gpu_pool import get_pool as get_gpu_pool
+    total_slots = config_loader.get("scheduler", "total_gpu_slots", 4)
+    get_gpu_pool().total_slots = total_slots
     return {"status": "reloaded", "config": new_cfg}
 
 

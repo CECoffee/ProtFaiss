@@ -39,6 +39,7 @@ frontend/.env.*.local
 # ── Legacy (kept locally, not tracked in git) ────────
 legacy/
 static_legacy/
+migrations/
 
 # ── OS ───────────────────────────────────────────────
 .DS_Store

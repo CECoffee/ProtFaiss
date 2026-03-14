@@ -1,181 +1,187 @@
 <template>
-  <div class="datasets-view">
-    <h2>Manage Datasets</h2>
+  <div>
+    <n-space vertical :size="20">
+      <n-card>
+        <n-space justify="space-between" align="center">
+          <n-space align="center">
+            <n-text v-if="activeDatasetId" depth="2">
+              Active: <n-text strong>{{ activeName }}</n-text>
+            </n-text>
+            <n-text v-else depth="3">No active dataset</n-text>
+          </n-space>
+          <n-button size="small" @click="refresh" :loading="loading">Refresh</n-button>
+        </n-space>
+      </n-card>
 
-    <div v-if="activeDatasetId" class="active-banner">
-      Active dataset: <strong>{{ activeName }}</strong>
-    </div>
+      <n-alert v-if="error" type="error" :title="error" />
 
-    <button class="btn-refresh" @click="refresh" :disabled="loading">Refresh</button>
+      <n-data-table
+        v-if="datasets.length > 0"
+        :columns="columns"
+        :data="datasets"
+        :pagination="{ pageSize: 15 }"
+        :row-class-name="rowClass"
+        size="small"
+        striped
+      />
 
-    <div v-if="error" class="error-msg">{{ error }}</div>
-
-    <table v-if="datasets.length > 0" class="datasets-table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Algorithm</th>
-          <th>Status</th>
-          <th>Sequences</th>
-          <th>Created</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="ds in datasets" :key="ds.id" :class="{ 'row-active': ds.id === activeDatasetId }">
-          <td>{{ ds.name }}</td>
-          <td><span class="algo-badge">{{ ds.algorithm }}</span></td>
-          <td>
-            <span class="status-badge" :class="'status-' + ds.status">{{ ds.status }}</span>
-            <span v-if="ds.status === 'building'" class="pct-inline">{{ ds.progress_pct }}%</span>
-          </td>
-          <td>{{ (ds.num_indexed || ds.num_sequences || 0).toLocaleString() }}</td>
-          <td>{{ formatDate(ds.created_at) }}</td>
-          <td class="actions">
-            <button
-              class="btn-use"
-              :disabled="ds.status !== 'ready' || ds.id === activeDatasetId || loading"
-              @click="handleSwitch(ds.id)"
-            >
-              Use
-            </button>
-            <button
-              class="btn-delete"
-              :disabled="loading"
-              @click="handleDelete(ds)"
-            >
-              Delete
-            </button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-
-    <p v-else-if="!loading" class="empty-hint">No datasets yet. Go to Build Index to create one.</p>
+      <n-empty v-else-if="!loading" description="No datasets yet. Go to Build Index to create one." />
+    </n-space>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
-import { useDatasets } from '../composables/useDatasets'
+import { ref, computed, h, onMounted } from 'vue'
+import { NTag, NButton, NSpace, NSwitch, NPopconfirm } from 'naive-ui'
+import { listDatasets, switchDataset, deleteDataset, setDatasetVisibility } from '../api/buildApi'
 
-const { datasets, activeDatasetId, loading, error, refresh, switchTo, remove } = useDatasets()
-
-onMounted(refresh)
+const datasets = ref([])
+const activeDatasetId = ref(null)
+const loading = ref(false)
+const error = ref('')
 
 const activeName = computed(() => {
   const ds = datasets.value.find(d => d.id === activeDatasetId.value)
-  return ds ? ds.name : activeDatasetId.value
+  return ds?.name || activeDatasetId.value
 })
 
-async function handleSwitch(id) {
+function rowClass(row) {
+  return row.id === activeDatasetId.value ? 'row-active' : ''
+}
+
+const columns = [
+  {
+    title: 'Name',
+    key: 'name',
+    render: (row) => {
+      const parts = [h('span', row.name)]
+      if (row.id === activeDatasetId.value) {
+        parts.push(h(NTag, { type: 'success', size: 'small', round: true, style: 'margin-left: 6px' }, { default: () => 'Active' }))
+      }
+      return h(NSpace, { align: 'center', size: 4 }, { default: () => parts })
+    },
+  },
+  {
+    title: 'Algorithm',
+    key: 'algorithm',
+    width: 100,
+    render: (row) => h(NTag, { size: 'small', round: true }, { default: () => row.algorithm }),
+  },
+  {
+    title: 'Status',
+    key: 'status',
+    width: 130,
+    render: (row) => {
+      const typeMap = { ready: 'success', building: 'warning', error: 'error' }
+      const parts = [h(NTag, { type: typeMap[row.status] || 'default', size: 'small', round: true }, { default: () => row.status })]
+      if (row.status === 'building') {
+        parts.push(h('span', { style: 'font-size: 0.8rem; color: #888; margin-left: 4px' }, `${row.progress_pct}%`))
+      }
+      return h(NSpace, { align: 'center', size: 4 }, { default: () => parts })
+    },
+  },
+  {
+    title: 'Sequences',
+    key: 'num_indexed',
+    width: 110,
+    render: (row) => (row.num_indexed || row.num_sequences || 0).toLocaleString(),
+  },
+  {
+    title: 'Visibility',
+    key: 'visibility',
+    width: 110,
+    render: (row) => h(NSwitch, {
+      value: row.visibility === 'public',
+      size: 'small',
+      checkedChildren: 'Public',
+      uncheckedChildren: 'Private',
+      onUpdateValue: (val) => handleVisibility(row, val ? 'public' : 'private'),
+    }),
+  },
+  {
+    title: 'Created',
+    key: 'created_at',
+    width: 160,
+    render: (row) => row.created_at ? new Date(row.created_at).toLocaleString() : '—',
+  },
+  {
+    title: 'Actions',
+    key: 'actions',
+    width: 160,
+    render: (row) => h(NSpace, { size: 6 }, {
+      default: () => [
+        h(NButton, {
+          size: 'small',
+          type: 'primary',
+          disabled: row.status !== 'ready' || row.id === activeDatasetId.value || loading.value,
+          onClick: () => handleSwitch(row.id),
+        }, { default: () => 'Use' }),
+        h(NPopconfirm, {
+          onPositiveClick: () => handleDelete(row),
+        }, {
+          trigger: () => h(NButton, {
+            size: 'small',
+            type: 'error',
+            secondary: true,
+            disabled: loading.value,
+          }, { default: () => 'Delete' }),
+          default: () => `Delete "${row.name}"? This will remove index files and the database table.`,
+        }),
+      ],
+    }),
+  },
+]
+
+async function refresh() {
+  loading.value = true
+  error.value = ''
   try {
-    await switchTo(id)
-  } catch {
-    // error displayed via error ref
+    const data = await listDatasets()
+    datasets.value = data.datasets || []
+    activeDatasetId.value = data.active_dataset_id
+  } catch (e) {
+    error.value = e.response?.data?.detail || 'Failed to load datasets'
   }
+  loading.value = false
+}
+
+async function handleSwitch(id) {
+  loading.value = true
+  try {
+    await switchDataset(id)
+    activeDatasetId.value = id
+    window.$message?.success('Dataset activated')
+  } catch (e) {
+    window.$message?.error(e.response?.data?.detail || 'Switch failed')
+  }
+  loading.value = false
 }
 
 async function handleDelete(ds) {
-  if (!window.confirm(`Delete dataset "${ds.name}"? This will remove the index files and database table.`)) return
+  loading.value = true
   try {
-    await remove(ds.id)
-  } catch {
-    // error displayed via error ref
+    await deleteDataset(ds.id)
+    await refresh()
+    window.$message?.success('Dataset deleted')
+  } catch (e) {
+    window.$message?.error(e.response?.data?.detail || 'Delete failed')
+  }
+  loading.value = false
+}
+
+async function handleVisibility(ds, visibility) {
+  try {
+    await setDatasetVisibility(ds.id, visibility)
+    ds.visibility = visibility
+    window.$message?.success(`Set to ${visibility}`)
+  } catch (e) {
+    window.$message?.error(e.response?.data?.detail || 'Update failed')
   }
 }
 
-function formatDate(ts) {
-  if (!ts) return '—'
-  return new Date(ts * 1000).toLocaleString()
-}
+onMounted(refresh)
 </script>
 
-<style scoped>
-.datasets-view { max-width: 900px; }
-.active-banner {
-  padding: 10px 16px;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 6px;
-  color: #1e40af;
-  margin-bottom: 16px;
-  font-size: 0.9rem;
-}
-.active-banner.inactive {
-  background: #f8fafc;
-  border-color: #e2e8f0;
-  color: #64748b;
-}
-.btn-refresh {
-  margin-bottom: 16px;
-  padding: 6px 16px;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  cursor: pointer;
-  background: white;
-}
-.btn-refresh:hover { background: #f1f5f9; }
-.error-msg { color: #dc2626; margin-bottom: 12px; }
-.datasets-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-.datasets-table th {
-  text-align: left;
-  padding: 10px 12px;
-  background: #f8fafc;
-  border-bottom: 2px solid #e2e8f0;
-  font-weight: 600;
-  color: #475569;
-}
-.datasets-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid #e2e8f0;
-  vertical-align: middle;
-}
-.row-active td { background: #eff6ff; }
-.algo-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 12px;
-  background: #e2e8f0;
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-.status-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-.status-ready { background: #dcfce7; color: #166534; }
-.status-building { background: #fef9c3; color: #854d0e; }
-.status-error { background: #fee2e2; color: #991b1b; }
-.pct-inline { margin-left: 6px; font-size: 0.8rem; color: #64748b; }
-.actions { display: flex; gap: 8px; }
-.btn-use {
-  padding: 4px 12px;
-  background: #3b82f6;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.85rem;
-}
-.btn-use:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn-use:hover:not(:disabled) { background: #2563eb; }
-.btn-delete {
-  padding: 4px 12px;
-  background: white;
-  color: #dc2626;
-  border: 1px solid #fca5a5;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.85rem;
-}
-.btn-delete:hover:not(:disabled) { background: #fee2e2; }
-.empty-hint { color: #94a3b8; margin-top: 24px; }
+<style>
+.row-active td { background: rgba(24, 160, 88, 0.06) !important; }
 </style>

@@ -1,90 +1,225 @@
 <template>
-  <h1>Protein FAISS Search</h1>
-  <p class="small">FastAPI + Vue 3 — async submit/poll</p>
+  <div>
+    <n-space vertical :size="20">
+      <!-- Dataset selector -->
+      <n-card size="small">
+        <n-space align="center" justify="space-between">
+          <n-space align="center">
+            <n-text strong>Active Dataset:</n-text>
+            <n-select
+              v-model:value="selectedDatasetId"
+              :options="datasetOptions"
+              placeholder="Select a dataset"
+              style="min-width: 260px"
+              :loading="dsLoading"
+              @update:value="handleSwitch"
+            />
+          </n-space>
+          <n-tag v-if="activeEntry" :type="activeEntry.status === 'ready' ? 'success' : 'warning'" round>
+            {{ activeEntry.status }}
+          </n-tag>
+        </n-space>
+      </n-card>
 
-  <DatasetSwitcher />
+      <!-- Search form -->
+      <n-card title="Protein Sequence Search">
+        <n-space vertical :size="16">
+          <n-form-item label="Sequence (FASTA or raw amino acids)" :show-feedback="false">
+            <n-input
+              v-model:value="sequence"
+              type="textarea"
+              :rows="5"
+              placeholder=">protein_id&#10;MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQTLGQHDFSAGEGLYTHMKALRPDEDRLSPLHSVYVDQWDWERVMGDGERQFSTLKSTVEAIWAGIKATEAAVSEEFGLAPFLPDQIHFVHSQELLSRYPDLDAKGRERAIAKDLGAVFLVGIGGKLSDGHRHDVRAPDYDDWSTPSELGHAGLNGDILVWNPVLEDAFELSSMGIRVDADTLKHQLALTGDEDRLELEWHQALLRGEMPQTIGGGIGQSRLTMLLLQLPHIGQVQAGVWPAAVRESVPSLL"
+              :disabled="status === 'pending'"
+            />
+          </n-form-item>
 
-  <div v-if="noDatasetError" class="no-dataset-banner">
-    <span>No dataset is active. Please activate a dataset before searching.</span>
-    <button class="btn-goto-datasets" @click="$emit('goto-datasets')">Go to Manage Datasets</button>
+          <n-space>
+            <n-form-item label="Top K" :show-feedback="false" style="width: 120px">
+              <n-input-number v-model:value="topK" :min="1" :max="100" />
+            </n-form-item>
+            <n-form-item label="Pooling" :show-feedback="false" style="width: 140px">
+              <n-select v-model:value="pooling" :options="poolingOptions" />
+            </n-form-item>
+          </n-space>
+
+          <n-alert v-if="noDatasetError" type="warning" title="No active dataset. Please activate a dataset first." />
+
+          <n-space>
+            <n-button
+              type="primary"
+              :loading="status === 'pending'"
+              :disabled="!sequence.trim() || status === 'pending'"
+              @click="handleSubmit"
+            >
+              Search
+            </n-button>
+            <n-button v-if="status === 'pending'" @click="handleCancel">Cancel</n-button>
+          </n-space>
+        </n-space>
+      </n-card>
+
+      <!-- Status -->
+      <n-card v-if="status !== 'idle'" size="small">
+        <n-space align="center">
+          <n-spin v-if="status === 'pending'" size="small" />
+          <n-icon v-else-if="status === 'done'" color="#18a058" size="18"><CheckmarkCircleOutline /></n-icon>
+          <n-icon v-else color="#d03050" size="18"><CloseCircleOutline /></n-icon>
+          <n-text>{{ statusText }}</n-text>
+          <template v-if="meta">
+            <n-divider vertical />
+            <n-text depth="3" style="font-size: 0.8rem">
+              ESM2: {{ meta.esm_time?.toFixed(2) }}s | FAISS: {{ meta.faiss_time?.toFixed(2) }}s | DB: {{ meta.db_time?.toFixed(2) }}s
+            </n-text>
+          </template>
+        </n-space>
+      </n-card>
+
+      <!-- Results -->
+      <n-card v-if="status === 'done' && result?.length" title="Results">
+        <n-data-table
+          :columns="resultColumns"
+          :data="result"
+          :pagination="{ pageSize: 10 }"
+          size="small"
+          striped
+        />
+      </n-card>
+    </n-space>
   </div>
-
-  <SequenceInput @submit="handleSubmit" @cancel="handleCancel" />
-
-  <StatusPanel
-    v-if="status !== 'idle'"
-    :status="status"
-    :task-id="taskId"
-    :meta="meta"
-  />
-
-  <ResultsList
-    v-if="status === 'done' && result"
-    :results="result"
-    :task-id="taskId"
-  />
-
-  <DiagnosticLog v-if="logs.length > 0" :logs="logs" />
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { submitSearch } from '../api/proteinSearch'
-import { usePolling } from '../composables/usePolling'
-import SequenceInput from '../components/SequenceInput.vue'
-import StatusPanel from '../components/StatusPanel.vue'
-import ResultsList from '../components/ResultsList.vue'
-import DiagnosticLog from '../components/DiagnosticLog.vue'
-import DatasetSwitcher from '../components/DatasetSwitcher.vue'
+import { ref, computed, onMounted } from 'vue'
+import { h } from 'vue'
+import { NTag, NText, NTooltip, NEllipsis } from 'naive-ui'
+import { CheckmarkCircleOutline, CloseCircleOutline } from '@vicons/ionicons5'
+import { submitSearch, getResult } from '../api/proteinSearch'
+import { listDatasets, switchDataset } from '../api/buildApi'
 
-defineEmits(['goto-datasets'])
-
-const { status, taskId, result, meta, logs, startPolling, stopPolling } = usePolling()
+const sequence = ref('')
+const topK = ref(5)
+const pooling = ref('mean')
+const status = ref('idle')
+const taskId = ref(null)
+const result = ref(null)
+const meta = ref(null)
 const noDatasetError = ref(false)
+const pollTimer = ref(null)
 
-async function handleSubmit({ sequence, topK, pooling }) {
-  noDatasetError.value = false
+const datasets = ref([])
+const activeDatasetId = ref(null)
+const selectedDatasetId = ref(null)
+const dsLoading = ref(false)
+
+const poolingOptions = [
+  { label: 'Mean', value: 'mean' },
+  { label: 'CLS', value: 'cls' },
+]
+
+const activeEntry = computed(() => datasets.value.find(d => d.id === activeDatasetId.value))
+
+const datasetOptions = computed(() =>
+  datasets.value
+    .filter(d => d.status === 'ready')
+    .map(d => ({
+      label: `${d.name} (${d.algorithm})`,
+      value: d.id,
+    }))
+)
+
+const statusText = computed(() => {
+  if (status.value === 'pending') return `Searching... (task: ${taskId.value?.slice(0, 8)})`
+  if (status.value === 'done') return `Done — ${result.value?.length || 0} results`
+  if (status.value === 'error') return 'Search failed'
+  return ''
+})
+
+const resultColumns = [
+  { title: '#', key: 'id', width: 70 },
+  {
+    title: 'Header',
+    key: 'header',
+    render: (row) => h(NEllipsis, { style: 'max-width: 200px' }, { default: () => row.header || '—' }),
+  },
+  {
+    title: 'Sequence',
+    key: 'sequence',
+    render: (row) => h(NEllipsis, { style: 'max-width: 180px' }, { default: () => row.sequence || '—' }),
+  },
+  { title: 'KO', key: 'ko', width: 90 },
+  { title: 'EC', key: 'ec', width: 90 },
+  {
+    title: 'Distance',
+    key: 'faiss_distance',
+    width: 100,
+    render: (row) => h(NTag, { type: 'info', size: 'small', round: true }, { default: () => row.faiss_distance?.toFixed(4) }),
+  },
+]
+
+async function loadDatasets() {
+  dsLoading.value = true
   try {
-    const id = await submitSearch(sequence, topK, pooling)
-    startPolling(id)
+    const data = await listDatasets()
+    datasets.value = data.datasets || []
+    activeDatasetId.value = data.active_dataset_id
+    selectedDatasetId.value = data.active_dataset_id
+  } catch {}
+  dsLoading.value = false
+}
+
+async function handleSwitch(id) {
+  if (!id) return
+  dsLoading.value = true
+  try {
+    await switchDataset(id)
+    activeDatasetId.value = id
+  } catch (e) {
+    window.$message?.error(e.response?.data?.detail || 'Switch failed')
+  }
+  dsLoading.value = false
+}
+
+async function handleSubmit() {
+  noDatasetError.value = false
+  status.value = 'pending'
+  result.value = null
+  meta.value = null
+  try {
+    const id = await submitSearch(sequence.value, topK.value, pooling.value)
+    taskId.value = id
+    pollTimer.value = setInterval(() => pollResult(id), 1000)
   } catch (e) {
     if (e.response?.status === 409) {
       noDatasetError.value = true
     } else {
-      console.error('Submit failed:', e)
-      alert('Submit failed: ' + (e.response?.data?.detail || e.message))
+      window.$message?.error(e.response?.data?.detail || 'Submit failed')
     }
+    status.value = 'idle'
   }
 }
 
-function handleCancel() {
-  const wasCancelled = stopPolling()
-  if (!wasCancelled) alert('No active polling task')
+async function pollResult(id) {
+  try {
+    const task = await getResult(id)
+    if (task.status === 'done') {
+      clearInterval(pollTimer.value)
+      status.value = 'done'
+      result.value = task.result
+      meta.value = task.times
+    } else if (task.status === 'error') {
+      clearInterval(pollTimer.value)
+      status.value = 'error'
+      window.$message?.error(task.error || 'Search error')
+    }
+  } catch {}
 }
-</script>
 
-<style scoped>
-.no-dataset-banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: #fef9c3;
-  border: 1px solid #fde047;
-  border-radius: 6px;
-  color: #854d0e;
-  font-size: 0.9rem;
-  margin-bottom: 16px;
+function handleCancel() {
+  clearInterval(pollTimer.value)
+  status.value = 'idle'
+  taskId.value = null
 }
-.btn-goto-datasets {
-  padding: 4px 14px;
-  background: #f59e0b;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  white-space: nowrap;
-}
-.btn-goto-datasets:hover { background: #d97706; }
-</style>
+
+onMounted(loadDatasets)
+</script>
