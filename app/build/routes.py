@@ -28,8 +28,8 @@ from .dataset_db import (
     blocking_clear_user_active_dataset,
 )
 from .db_operations import blocking_drop_table
-from app.search.retriever import swap_active_dataset
 from app.search.tasks import BLOCKING_EXECUTOR
+from app.search import vram_timer
 from app.core.config import DATASETS_ROOT
 from app.auth.dependencies import get_current_user, require_admin
 
@@ -229,13 +229,13 @@ async def datasets_switch(req: SwitchRequest, current_user: dict = Depends(get_c
     if entry["owner_id"] != current_user["id"] and entry["visibility"] != "public" and current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Access denied")
 
-    n_shards = await loop.run_in_executor(
-        BLOCKING_EXECUTOR, swap_active_dataset, entry["index_dir"]
-    )
+    # Cancel idle timer and immediately release old dataset's VRAM for this user
+    await vram_timer.cancel_and_release(current_user["id"])
+
     await loop.run_in_executor(
         BLOCKING_EXECUTOR, blocking_set_user_active_dataset, current_user["id"], req.dataset_id
     )
-    return {"active_dataset_id": req.dataset_id, "shards_loaded": n_shards}
+    return {"active_dataset_id": req.dataset_id}
 
 
 # ---------------------------------------------------------------------------

@@ -73,7 +73,10 @@ async def startup():
 
 
 @app.on_event("shutdown")
-def shutdown():
+async def shutdown():
+    print("shutdown: cancelling VRAM timers ...")
+    from app.search import vram_timer
+    await vram_timer.cancel_all()
     print("shutdown: stopping GPU scheduler ...")
     from app.scheduler.scheduler import get_scheduler
     sched = get_scheduler()

@@ -34,6 +34,7 @@ _DEFAULTS: dict = {
         "max_concurrent_encodings": 3,
         "threadpool_workers": 32,
         "faiss_nprobe": 8,
+        "time_release_vram": 300,
     },
     "build": {
         "encoding_batch_size": 32,

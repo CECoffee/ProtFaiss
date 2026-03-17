@@ -127,6 +127,23 @@ def get_or_load_shards(dataset_id: str, index_dir: str) -> ShardSet:
         return shard_set
 
 
+def is_cached(dataset_id: str) -> bool:
+    """Return True if dataset shards are currently in the LRU cache."""
+    with _CACHE_LOCK:
+        return dataset_id in _CACHE
+
+
+def unload_dataset(dataset_id: str) -> bool:
+    """Remove dataset from LRU cache and free GPU resources. Returns True if it was present."""
+    with _CACHE_LOCK:
+        if dataset_id not in _CACHE:
+            return False
+        shard_set = _CACHE.pop(dataset_id)
+        _unload_shard_set(shard_set)
+        print(f"[retriever] Unloaded dataset {dataset_id} from VRAM")
+        return True
+
+
 # ---------------------------------------------------------------------------
 # Legacy load_shards / swap_active_dataset (used by main.py startup)
 # ---------------------------------------------------------------------------

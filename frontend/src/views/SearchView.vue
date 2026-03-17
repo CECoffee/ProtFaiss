@@ -66,10 +66,16 @@
           <n-icon v-else-if="status === 'done'" color="#18a058" size="18"><CheckmarkCircleOutline /></n-icon>
           <n-icon v-else color="#d03050" size="18"><CloseCircleOutline /></n-icon>
           <n-text>{{ statusText }}</n-text>
+          <template v-if="status === 'pending' && indexStatus === 'loading'">
+            <n-divider vertical />
+            <n-text depth="3" style="font-size: 0.8rem">Loading index from disk...</n-text>
+          </template>
           <template v-if="meta">
             <n-divider vertical />
             <n-text depth="3" style="font-size: 0.8rem">
-              ESM2: {{ meta.esm_time?.toFixed(2) }}s | FAISS: {{ meta.faiss_time?.toFixed(2) }}s | DB: {{ meta.db_time?.toFixed(2) }}s
+              ESM2: {{ meta.esm_time?.toFixed(2) }}s
+              <template v-if="meta.index_load_time > 0"> | Index load: {{ meta.index_load_time?.toFixed(2) }}s</template>
+              | FAISS: {{ meta.faiss_time?.toFixed(2) }}s | DB: {{ meta.db_time?.toFixed(2) }}s
             </n-text>
           </template>
         </n-space>
@@ -104,6 +110,7 @@ const status = ref('idle')
 const taskId = ref(null)
 const result = ref(null)
 const meta = ref(null)
+const indexStatus = ref('unknown')
 const noDatasetError = ref(false)
 const pollTimer = ref(null)
 
@@ -129,7 +136,10 @@ const datasetOptions = computed(() =>
 )
 
 const statusText = computed(() => {
-  if (status.value === 'pending') return `Searching... (task: ${taskId.value?.slice(0, 8)})`
+  if (status.value === 'pending') {
+    if (indexStatus.value === 'loading') return `Loading index... (task: ${taskId.value?.slice(0, 8)})`
+    return `Searching... (task: ${taskId.value?.slice(0, 8)})`
+  }
   if (status.value === 'done') return `Done — ${result.value?.length || 0} results`
   if (status.value === 'error') return 'Search failed'
   return ''
@@ -185,6 +195,7 @@ async function handleSubmit() {
   status.value = 'pending'
   result.value = null
   meta.value = null
+  indexStatus.value = 'unknown'
   try {
     const id = await submitSearch(sequence.value, topK.value, pooling.value)
     taskId.value = id
@@ -202,6 +213,7 @@ async function handleSubmit() {
 async function pollResult(id) {
   try {
     const task = await getResult(id)
+    if (task.index_status) indexStatus.value = task.index_status
     if (task.status === 'done') {
       clearInterval(pollTimer.value)
       status.value = 'done'
@@ -219,6 +231,7 @@ function handleCancel() {
   clearInterval(pollTimer.value)
   status.value = 'idle'
   taskId.value = null
+  indexStatus.value = 'unknown'
 }
 
 onMounted(loadDatasets)

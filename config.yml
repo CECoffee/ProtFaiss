@@ -20,6 +20,8 @@ search:
   max_concurrent_encodings: 3
   threadpool_workers: 32
   faiss_nprobe: 8
+  # 闲时自动释放显存：检索完成后等待此秒数再卸载该用户的 FAISS index（0 = 禁用）
+  time_release_vram: 30
 
 build:
   encoding_batch_size: 32
