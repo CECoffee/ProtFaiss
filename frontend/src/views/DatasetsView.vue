@@ -5,11 +5,11 @@
         <n-space justify="space-between" align="center">
           <n-space align="center">
             <n-text v-if="activeDatasetId" depth="2">
-              Active: <n-text strong>{{ activeName }}</n-text>
+              {{ t('datasets.active') }} <n-text strong>{{ activeName }}</n-text>
             </n-text>
-            <n-text v-else depth="3">No active dataset</n-text>
+            <n-text v-else depth="3">{{ t('datasets.noActive') }}</n-text>
           </n-space>
-          <n-button size="small" @click="refresh" :loading="loading">Refresh</n-button>
+          <n-button size="small" @click="refresh" :loading="loading">{{ t('datasets.btnRefresh') }}</n-button>
         </n-space>
       </n-card>
 
@@ -25,7 +25,7 @@
         striped
       />
 
-      <n-empty v-else-if="!loading" description="No datasets yet. Go to Build Index to create one." />
+      <n-empty v-else-if="!loading" :description="t('datasets.empty')" />
     </n-space>
   </div>
 </template>
@@ -34,6 +34,9 @@
 import { ref, computed, h, onMounted } from 'vue'
 import { NTag, NButton, NSpace, NSwitch, NPopconfirm } from 'naive-ui'
 import { listDatasets, switchDataset, deleteDataset, setDatasetVisibility } from '../api/buildApi'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 
 const datasets = ref([])
 const activeDatasetId = ref(null)
@@ -49,26 +52,26 @@ function rowClass(row) {
   return row.id === activeDatasetId.value ? 'row-active' : ''
 }
 
-const columns = [
+const columns = computed(() => [
   {
-    title: 'Name',
+    title: t('datasets.col.name'),
     key: 'name',
     render: (row) => {
       const parts = [h('span', row.name)]
       if (row.id === activeDatasetId.value) {
-        parts.push(h(NTag, { type: 'success', size: 'small', round: true, style: 'margin-left: 6px' }, { default: () => 'Active' }))
+        parts.push(h(NTag, { type: 'success', size: 'small', round: true, style: 'margin-left: 6px' }, { default: () => t('datasets.tag.active') }))
       }
       return h(NSpace, { align: 'center', size: 4 }, { default: () => parts })
     },
   },
   {
-    title: 'Algorithm',
+    title: t('datasets.col.algorithm'),
     key: 'algorithm',
     width: 100,
     render: (row) => h(NTag, { size: 'small', round: true }, { default: () => row.algorithm }),
   },
   {
-    title: 'Status',
+    title: t('datasets.col.status'),
     key: 'status',
     width: 130,
     render: (row) => {
@@ -81,31 +84,31 @@ const columns = [
     },
   },
   {
-    title: 'Sequences',
+    title: t('datasets.col.sequences'),
     key: 'num_indexed',
     width: 110,
     render: (row) => (row.num_indexed || row.num_sequences || 0).toLocaleString(),
   },
   {
-    title: 'Visibility',
+    title: t('datasets.col.visibility'),
     key: 'visibility',
     width: 110,
     render: (row) => h(NSwitch, {
       value: row.visibility === 'public',
       size: 'small',
-      checkedChildren: 'Public',
-      uncheckedChildren: 'Private',
+      checkedChildren: t('datasets.vis.public'),
+      uncheckedChildren: t('datasets.vis.private'),
       onUpdateValue: (val) => handleVisibility(row, val ? 'public' : 'private'),
     }),
   },
   {
-    title: 'Created',
+    title: t('datasets.col.created'),
     key: 'created_at',
     width: 160,
     render: (row) => row.created_at ? new Date(row.created_at).toLocaleString() : '—',
   },
   {
-    title: 'Actions',
+    title: t('datasets.col.actions'),
     key: 'actions',
     width: 160,
     render: (row) => h(NSpace, { size: 6 }, {
@@ -115,22 +118,19 @@ const columns = [
           type: 'primary',
           disabled: row.status !== 'ready' || row.id === activeDatasetId.value || loading.value,
           onClick: () => handleSwitch(row.id),
-        }, { default: () => 'Use' }),
+        }, { default: () => t('datasets.btn.use') }),
         h(NPopconfirm, {
           onPositiveClick: () => handleDelete(row),
         }, {
           trigger: () => h(NButton, {
-            size: 'small',
-            type: 'error',
-            secondary: true,
-            disabled: loading.value,
-          }, { default: () => 'Delete' }),
-          default: () => `Delete "${row.name}"? This will remove index files and the database table.`,
+            size: 'small', type: 'error', secondary: true, disabled: loading.value,
+          }, { default: () => t('datasets.btn.delete') }),
+          default: () => t('datasets.confirm.delete', { name: row.name }),
         }),
       ],
     }),
   },
-]
+])
 
 async function refresh() {
   loading.value = true
@@ -150,7 +150,7 @@ async function handleSwitch(id) {
   try {
     await switchDataset(id)
     activeDatasetId.value = id
-    window.$message?.success('Dataset activated')
+    window.$message?.success(t('datasets.msg.activated'))
   } catch (e) {
     window.$message?.error(e.response?.data?.detail || 'Switch failed')
   }
@@ -162,7 +162,7 @@ async function handleDelete(ds) {
   try {
     await deleteDataset(ds.id)
     await refresh()
-    window.$message?.success('Dataset deleted')
+    window.$message?.success(t('datasets.msg.deleted'))
   } catch (e) {
     window.$message?.error(e.response?.data?.detail || 'Delete failed')
   }

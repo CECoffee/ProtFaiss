@@ -36,6 +36,21 @@
           <n-tag :type="gpuTagType" size="small" round>
             GPU {{ gpuStore.pool.used_slots }}/{{ gpuStore.pool.total_slots }}
           </n-tag>
+
+          <!-- Language toggle -->
+          <n-button text size="small" @click="toggleLocale" style="font-size: 0.85rem; min-width: 32px">
+            {{ locale === 'en' ? '中' : 'EN' }}
+          </n-button>
+
+          <!-- Theme toggle -->
+          <n-button text size="small" @click="cycleMode" :title="themeTitle">
+            <n-icon size="18">
+              <SunnyOutline v-if="themeStore.mode === 'light'" />
+              <MoonOutline v-else-if="themeStore.mode === 'dark'" />
+              <DesktopOutline v-else />
+            </n-icon>
+          </n-button>
+
           <n-dropdown :options="userMenuOptions" @select="handleUserAction">
             <n-button text style="cursor: pointer">
               <n-space align="center" :size="6">
@@ -65,44 +80,49 @@ import { NIcon } from 'naive-ui'
 import {
   SearchOutline, HammerOutline, FolderOutline,
   HardwareChipOutline, PeopleOutline, SettingsOutline, LogOutOutline,
+  SunnyOutline, MoonOutline, DesktopOutline,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useGpuStore } from '../stores/gpu'
+import { useThemeStore } from '../stores/theme'
+import { useI18n } from '../i18n/index.js'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 const gpuStore = useGpuStore()
+const themeStore = useThemeStore()
+const { locale, t, toggleLocale } = useI18n()
 const collapsed = ref(false)
 
 const icon = (comp) => () => h(NIcon, null, { default: () => h(comp) })
 
 const menuOptions = computed(() => {
   const items = [
-    { label: 'Search', key: '/search', icon: icon(SearchOutline) },
-    { label: 'Build Index', key: '/build', icon: icon(HammerOutline) },
-    { label: 'Datasets', key: '/datasets', icon: icon(FolderOutline) },
-    { label: 'GPU Queue', key: '/gpu', icon: icon(HardwareChipOutline) },
+    { label: t('nav.search'), key: '/search', icon: icon(SearchOutline) },
+    { label: t('nav.build'), key: '/build', icon: icon(HammerOutline) },
+    { label: t('nav.datasets'), key: '/datasets', icon: icon(FolderOutline) },
+    { label: t('nav.gpu'), key: '/gpu', icon: icon(HardwareChipOutline) },
   ]
   if (auth.isAdmin) {
     items.push({ type: 'divider', key: 'div' })
-    items.push({ label: 'Users', key: '/admin/users', icon: icon(PeopleOutline) })
-    items.push({ label: 'System', key: '/admin/system', icon: icon(SettingsOutline) })
+    items.push({ label: t('nav.users'), key: '/admin/users', icon: icon(PeopleOutline) })
+    items.push({ label: t('nav.system'), key: '/admin/system', icon: icon(SettingsOutline) })
   }
   return items
 })
 
 const activeKey = computed(() => route.path)
 
-const pageTitles = {
-  '/search': 'Protein Search',
-  '/build': 'Build Index',
-  '/datasets': 'Manage Datasets',
-  '/gpu': 'GPU Queue',
-  '/admin/users': 'User Management',
-  '/admin/system': 'System',
-}
-const pageTitle = computed(() => pageTitles[route.path] || 'FaaIndex')
+const pageTitles = computed(() => ({
+  '/search': t('page.search'),
+  '/build': t('page.build'),
+  '/datasets': t('page.datasets'),
+  '/gpu': t('page.gpu'),
+  '/admin/users': t('page.users'),
+  '/admin/system': t('page.system'),
+}))
+const pageTitle = computed(() => pageTitles.value[route.path] || 'FaaIndex')
 
 const userInitial = computed(() => (auth.user?.username?.[0] || '?').toUpperCase())
 
@@ -115,9 +135,18 @@ const gpuTagType = computed(() => {
   return 'success'
 })
 
-const userMenuOptions = [
-  { label: 'Logout', key: 'logout', icon: icon(LogOutOutline) },
-]
+const themeTitle = computed(() => {
+  const m = themeStore.mode.value
+  if (m === 'light') return 'Light'
+  if (m === 'dark') return 'Dark'
+  return 'System'
+})
+
+function cycleMode() { themeStore.cycleMode() }
+
+const userMenuOptions = computed(() => [
+  { label: t('nav.logout'), key: 'logout', icon: icon(LogOutOutline) },
+])
 
 function handleMenuSelect(key) {
   router.push(key)

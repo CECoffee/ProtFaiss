@@ -4,67 +4,57 @@
       <div class="login-header">
         <span class="login-logo">🧬</span>
         <n-h2 style="margin: 8px 0 4px">FaaIndex</n-h2>
-        <n-text depth="3">Protein Sequence Similarity Search</n-text>
+        <n-text depth="3">{{ t('login.subtitle') }}</n-text>
       </div>
 
       <n-tabs v-model:value="tab" type="line" animated style="margin-top: 24px">
         <!-- Login tab -->
-        <n-tab-pane name="login" tab="Login">
+        <n-tab-pane name="login" :tab="t('login.tab.login')">
           <n-form ref="loginFormRef" :model="loginForm" :rules="loginRules" style="margin-top: 16px">
-            <n-form-item path="username" label="Username">
+            <n-form-item path="username" :label="t('login.username')">
               <n-input
                 v-model:value="loginForm.username"
-                placeholder="Username"
+                :placeholder="t('login.username')"
                 @keydown.enter="handleLogin"
               />
             </n-form-item>
-            <n-form-item path="password" label="Password">
+            <n-form-item path="password" :label="t('login.password')">
               <n-input
                 v-model:value="loginForm.password"
                 type="password"
                 show-password-on="click"
-                placeholder="Password"
+                :placeholder="t('login.password')"
                 @keydown.enter="handleLogin"
               />
             </n-form-item>
             <n-alert v-if="loginError" type="error" :title="loginError" style="margin-bottom: 16px" />
-            <n-button
-              type="primary"
-              block
-              :loading="loading"
-              @click="handleLogin"
-            >
-              Login
+            <n-button type="primary" block :loading="loading" @click="handleLogin">
+              {{ t('login.btnLogin') }}
             </n-button>
           </n-form>
         </n-tab-pane>
 
         <!-- Register tab -->
-        <n-tab-pane name="register" tab="Register">
+        <n-tab-pane name="register" :tab="t('login.tab.register')">
           <n-form ref="regFormRef" :model="regForm" :rules="regRules" style="margin-top: 16px">
-            <n-form-item path="username" label="Username">
-              <n-input v-model:value="regForm.username" placeholder="3-64 characters" />
+            <n-form-item path="username" :label="t('login.username')">
+              <n-input v-model:value="regForm.username" :placeholder="t('login.usernamePlaceholder')" />
             </n-form-item>
-            <n-form-item path="email" label="Email (optional)">
-              <n-input v-model:value="regForm.email" placeholder="user@example.com" />
+            <n-form-item path="email" :label="t('login.email')">
+              <n-input v-model:value="regForm.email" :placeholder="t('login.emailPlaceholder')" />
             </n-form-item>
-            <n-form-item path="password" label="Password">
+            <n-form-item path="password" :label="t('login.password')">
               <n-input
                 v-model:value="regForm.password"
                 type="password"
                 show-password-on="click"
-                placeholder="At least 6 characters"
+                :placeholder="t('login.passwordPlaceholder')"
               />
             </n-form-item>
             <n-alert v-if="regError" type="error" :title="regError" style="margin-bottom: 16px" />
-            <n-alert v-if="regSuccess" type="success" title="Account created! Please login." style="margin-bottom: 16px" />
-            <n-button
-              type="primary"
-              block
-              :loading="loading"
-              @click="handleRegister"
-            >
-              Create Account
+            <n-alert v-if="regSuccess" type="success" :title="t('login.registerSuccess')" style="margin-bottom: 16px" />
+            <n-button type="primary" block :loading="loading" @click="handleRegister">
+              {{ t('login.btnRegister') }}
             </n-button>
           </n-form>
         </n-tab-pane>
@@ -74,11 +64,13 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { register } from '../api/auth'
+import { useI18n } from '../i18n/index.js'
 
+const { t } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 
@@ -94,20 +86,20 @@ const regFormRef = ref(null)
 const loginForm = ref({ username: '', password: '' })
 const regForm = ref({ username: '', email: '', password: '' })
 
-const loginRules = {
-  username: { required: true, message: 'Username required', trigger: 'blur' },
-  password: { required: true, message: 'Password required', trigger: 'blur' },
-}
-const regRules = {
+const loginRules = computed(() => ({
+  username: { required: true, message: t('login.rule.usernameRequired'), trigger: 'blur' },
+  password: { required: true, message: t('login.rule.passwordRequired'), trigger: 'blur' },
+}))
+const regRules = computed(() => ({
   username: [
-    { required: true, message: 'Username required', trigger: 'blur' },
-    { min: 3, max: 64, message: '3-64 characters', trigger: 'blur' },
+    { required: true, message: t('login.rule.usernameRequired'), trigger: 'blur' },
+    { min: 3, max: 64, message: t('login.rule.usernameLength'), trigger: 'blur' },
   ],
   password: [
-    { required: true, message: 'Password required', trigger: 'blur' },
-    { min: 6, message: 'At least 6 characters', trigger: 'blur' },
+    { required: true, message: t('login.rule.passwordRequired'), trigger: 'blur' },
+    { min: 6, message: t('login.rule.passwordLength'), trigger: 'blur' },
   ],
-}
+}))
 
 async function handleLogin() {
   loginError.value = ''

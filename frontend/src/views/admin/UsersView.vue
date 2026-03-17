@@ -1,9 +1,9 @@
 <template>
   <div>
     <n-space vertical :size="20">
-      <n-card title="User Management">
+      <n-card :title="t('users.title')">
         <template #header-extra>
-          <n-button size="small" @click="load" :loading="loading">Refresh</n-button>
+          <n-button size="small" @click="load" :loading="loading">{{ t('users.btnRefresh') }}</n-button>
         </template>
         <n-data-table
           :columns="columns"
@@ -18,30 +18,32 @@
 </template>
 
 <script setup>
-import { ref, h, onMounted } from 'vue'
+import { ref, computed, h, onMounted } from 'vue'
 import { NTag, NButton, NSpace, NInputNumber, NSelect, NPopconfirm, NSwitch } from 'naive-ui'
 import { listUsers, updateUser, deleteUser } from '../../api/adminApi'
 import { useAuthStore } from '../../stores/auth'
+import { useI18n } from '../../i18n/index.js'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const users = ref([])
 const loading = ref(false)
 
-const roleOptions = [
-  { label: 'User', value: 'user' },
-  { label: 'Admin', value: 'admin' },
-]
+const roleOptions = computed(() => [
+  { label: t('users.role.user'), value: 'user' },
+  { label: t('users.role.admin'), value: 'admin' },
+])
 
-const columns = [
-  { title: 'Username', key: 'username', width: 140 },
-  { title: 'Email', key: 'email', render: (r) => r.email || '—' },
+const columns = computed(() => [
+  { title: t('users.col.username'), key: 'username', width: 140 },
+  { title: t('users.col.email'), key: 'email', render: (r) => r.email || '—' },
   {
-    title: 'Role',
+    title: t('users.col.role'),
     key: 'role',
     width: 130,
     render: (r) => h(NSelect, {
       value: r.role,
-      options: roleOptions,
+      options: roleOptions.value,
       size: 'small',
       style: 'width: 110px',
       disabled: r.id === auth.user?.id,
@@ -49,7 +51,7 @@ const columns = [
     }),
   },
   {
-    title: 'GPU Quota',
+    title: t('users.col.quota'),
     key: 'gpu_quota',
     width: 120,
     render: (r) => h(NInputNumber, {
@@ -62,7 +64,7 @@ const columns = [
     }),
   },
   {
-    title: 'Active',
+    title: t('users.col.active'),
     key: 'is_active',
     width: 90,
     render: (r) => h(NSwitch, {
@@ -73,22 +75,19 @@ const columns = [
     }),
   },
   {
-    title: 'Actions',
+    title: t('users.col.actions'),
     key: 'actions',
     width: 100,
     render: (r) => h(NPopconfirm, {
       onPositiveClick: () => handleDelete(r),
     }, {
       trigger: () => h(NButton, {
-        size: 'small',
-        type: 'error',
-        secondary: true,
-        disabled: r.id === auth.user?.id,
-      }, { default: () => 'Delete' }),
-      default: () => `Delete user "${r.username}"?`,
+        size: 'small', type: 'error', secondary: true, disabled: r.id === auth.user?.id,
+      }, { default: () => t('users.btn.delete') }),
+      default: () => t('users.confirm.delete', { name: r.username }),
     }),
   },
-]
+])
 
 async function load() {
   loading.value = true
@@ -105,7 +104,7 @@ async function handlePatch(user, patch) {
   try {
     const updated = await updateUser(user.id, patch)
     Object.assign(user, updated)
-    window.$message?.success('Updated')
+    window.$message?.success(t('users.msg.updated'))
   } catch (e) {
     window.$message?.error(e.response?.data?.detail || 'Update failed')
     await load()
@@ -116,7 +115,7 @@ async function handleDelete(user) {
   try {
     await deleteUser(user.id)
     await load()
-    window.$message?.success('User deleted')
+    window.$message?.success(t('users.msg.deleted'))
   } catch (e) {
     window.$message?.error(e.response?.data?.detail || 'Delete failed')
   }

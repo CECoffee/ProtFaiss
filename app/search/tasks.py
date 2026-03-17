@@ -71,17 +71,17 @@ async def _background_task(
             task_store[task_id]["index_status"] = "ready" if already_cached else "loading"
 
         index_start = time.time()
-        merged = await loop.run_in_executor(
+        merged, load_seconds = await loop.run_in_executor(
             BLOCKING_EXECUTOR, blocking_faiss_search, qvec, top_k, None, dataset_id, index_dir
         )
         faiss_done = time.time()
-        index_load_time = faiss_done - index_start if not already_cached else 0.0
+        index_load_time = load_seconds if not already_cached else 0.0
 
         async with task_store_lock:
             task_store[task_id]["index_status"] = "ready"
 
         ids = [r[1] for r in merged]
-        faiss_time = faiss_done
+        faiss_time = (faiss_done - index_start) - load_seconds
 
         rows = []
         if ids:
@@ -115,8 +115,8 @@ async def _background_task(
                     "total_time": db_time - start_time,
                     "esm_time": esm_time - start_time,
                     "index_load_time": index_load_time,
-                    "faiss_time": faiss_time - esm_time,
-                    "db_time": db_time - faiss_time,
+                    "faiss_time": faiss_time,
+                    "db_time": db_time - faiss_done,
                 },
             })
 

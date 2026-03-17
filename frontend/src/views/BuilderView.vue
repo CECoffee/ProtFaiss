@@ -1,69 +1,49 @@
 <template>
   <div>
     <n-space vertical :size="20">
-      <n-card title="Build Index from FASTA">
-        <n-text depth="3">Upload a FASTA file to import sequences into PostgreSQL and build a FAISS index.</n-text>
+      <n-card :title="t('build.title')">
+        <n-text depth="3">{{ t('build.subtitle') }}</n-text>
       </n-card>
 
       <!-- Build form -->
       <n-card v-if="buildStatus === 'idle'">
         <n-form :model="form" label-placement="top">
-          <!-- File upload -->
-          <n-form-item label="FASTA File (.fasta / .fa / .faa)">
-            <n-upload
-              :max="1"
-              accept=".fasta,.fa,.faa"
-              :default-upload="false"
-              @change="onFileChange"
-            >
+          <n-form-item :label="t('build.fileLabel')">
+            <n-upload :max="1" accept=".fasta,.fa,.faa" :default-upload="false" @change="onFileChange">
               <n-upload-dragger>
                 <div style="padding: 20px 0">
                   <n-icon size="40" depth="3"><CloudUploadOutline /></n-icon>
-                  <n-text style="display: block; margin-top: 8px">
-                    Click or drag a FASTA file here
-                  </n-text>
+                  <n-text style="display: block; margin-top: 8px">{{ t('build.fileDrag') }}</n-text>
                   <n-text depth="3" style="font-size: 0.8rem">
-                    {{ selectedFile ? selectedFile.name + ' (' + formatSize(selectedFile.size) + ')' : 'Supports .fasta, .fa, .faa' }}
+                    {{ selectedFile ? selectedFile.name + ' (' + formatSize(selectedFile.size) + ')' : t('build.fileSupports') }}
                   </n-text>
                 </div>
               </n-upload-dragger>
             </n-upload>
           </n-form-item>
 
-          <!-- Dataset name -->
-          <n-form-item label="Dataset Name">
-            <n-input v-model:value="form.name" placeholder="e.g. KEGG test set" />
+          <n-form-item :label="t('build.nameLabel')">
+            <n-input v-model:value="form.name" :placeholder="t('build.namePlaceholder')" />
           </n-form-item>
 
-          <!-- Algorithm -->
-          <n-form-item label="Index Algorithm">
+          <n-form-item :label="t('build.algoLabel')">
             <n-radio-group v-model:value="form.algorithm">
               <n-space vertical>
                 <n-radio value="flat">
-                  <n-space align="center">
-                    Flat (exact, L2)
-                    <n-tag size="small" type="info">Exact</n-tag>
-                  </n-space>
+                  <n-space align="center">{{ t('build.algoFlat') }}<n-tag size="small" type="info">Exact</n-tag></n-space>
                 </n-radio>
                 <n-radio value="ivfpq">
-                  <n-space align="center">
-                    IVF-PQ (approximate, GPU-accelerated)
-                    <n-tag size="small" type="success">Fast</n-tag>
-                  </n-space>
+                  <n-space align="center">{{ t('build.algoIvfpq') }}<n-tag size="small" type="success">Fast</n-tag></n-space>
                 </n-radio>
                 <n-radio value="hnsw">
-                  <n-space align="center">
-                    HNSW (approximate, CPU)
-                    <n-tag size="small" type="warning">CPU</n-tag>
-                  </n-space>
+                  <n-space align="center">{{ t('build.algoHnsw') }}<n-tag size="small" type="warning">CPU</n-tag></n-space>
                 </n-radio>
               </n-space>
             </n-radio-group>
           </n-form-item>
 
-          <!-- Advanced params -->
           <n-collapse v-if="form.algorithm !== 'flat'">
-            <n-collapse-item title="Advanced Parameters" name="params">
+            <n-collapse-item :title="t('build.advanced')" name="params">
               <n-grid v-if="form.algorithm === 'ivfpq'" :cols="3" :x-gap="16">
                 <n-gi>
                   <n-form-item label="nlist (IVF centroids)">
@@ -96,19 +76,14 @@
             </n-collapse-item>
           </n-collapse>
 
-          <n-button
-            type="primary"
-            :disabled="!selectedFile || !form.name"
-            style="margin-top: 16px"
-            @click="handleSubmit"
-          >
-            Start Build
+          <n-button type="primary" :disabled="!selectedFile || !form.name" style="margin-top: 16px" @click="handleSubmit">
+            {{ t('build.btnStart') }}
           </n-button>
         </n-form>
       </n-card>
 
       <!-- Progress panel -->
-      <n-card v-if="buildStatus !== 'idle'" title="Build Progress">
+      <n-card v-if="buildStatus !== 'idle'" :title="t('build.progressTitle')">
         <n-space vertical :size="16">
           <n-space justify="space-between" align="center">
             <n-space align="center">
@@ -129,13 +104,13 @@
             indicator-placement="inside"
           />
 
-          <n-text depth="3" style="font-size: 0.85rem">Step: {{ progressStep }}</n-text>
+          <n-text depth="3" style="font-size: 0.85rem">{{ t('build.step', { step: progressStep }) }}</n-text>
 
-          <n-alert v-if="buildStatus === 'ready'" type="success" title="Build complete! Dataset is ready." />
-          <n-alert v-if="buildStatus === 'error'" type="error" :title="'Build failed: ' + errorMsg" />
+          <n-alert v-if="buildStatus === 'ready'" type="success" :title="t('build.complete')" />
+          <n-alert v-if="buildStatus === 'error'" type="error" :title="t('build.failed', { msg: errorMsg })" />
 
           <n-button v-if="buildStatus === 'ready' || buildStatus === 'error'" @click="resetForm">
-            Build another
+            {{ t('build.btnAnother') }}
           </n-button>
         </n-space>
       </n-card>
@@ -147,6 +122,9 @@
 import { ref, computed } from 'vue'
 import { CloudUploadOutline, CheckmarkCircleOutline, CloseCircleOutline } from '@vicons/ionicons5'
 import { submitBuild, getBuildStatus } from '../api/buildApi'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 
 const selectedFile = ref(null)
 const buildStatus = ref('idle')
@@ -166,7 +144,10 @@ const form = ref({
 })
 
 const statusLabel = computed(() => ({
-  idle: 'Idle', building: 'Building...', ready: 'Done', error: 'Error',
+  idle: t('build.status.idle'),
+  building: t('build.status.building'),
+  ready: t('build.status.ready'),
+  error: t('build.status.error'),
 }[buildStatus.value] || buildStatus.value))
 
 const progressStatus = computed(() => ({

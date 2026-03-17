@@ -11,7 +11,8 @@
 
 <script setup>
 import { h, defineComponent } from 'vue'
-import { darkTheme, useMessage } from 'naive-ui'
+import { useMessage } from 'naive-ui'
+import { useThemeStore } from './stores/theme'
 
 // Mount $message globally so components can use window.$message
 const MessageMount = defineComponent({
@@ -21,7 +22,8 @@ const MessageMount = defineComponent({
   },
 })
 
-const theme = darkTheme
+const themeStore = useThemeStore()
+const theme = themeStore.naiveTheme
 
 const themeOverrides = {
   common: {

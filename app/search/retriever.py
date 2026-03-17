@@ -201,6 +201,8 @@ def blocking_faiss_search(
     If dataset_id + index_dir are provided, uses the LRU cache.
     Otherwise falls back to legacy global FAISS_SHARDS.
     """
+    import time as _time
+    load_start = _time.time()
     if dataset_id and index_dir:
         shard_set = get_or_load_shards(dataset_id, index_dir)
         shards = shard_set.shards
@@ -208,6 +210,7 @@ def blocking_faiss_search(
     else:
         shards = FAISS_SHARDS
         locks = FAISS_SHARD_LOCKS
+    load_seconds = _time.time() - load_start
 
     if not shards:
         raise RuntimeError("No FAISS shards loaded. Activate a dataset first.")
@@ -241,4 +244,4 @@ def blocking_faiss_search(
             if progress_cb:
                 progress_cb(completed, total_shards)
 
-    return sorted(results, key=lambda x: x[0])[:top_k]
+    return sorted(results, key=lambda x: x[0])[:top_k], load_seconds

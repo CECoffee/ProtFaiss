@@ -5,11 +5,11 @@
       <n-card size="small">
         <n-space align="center" justify="space-between">
           <n-space align="center">
-            <n-text strong>Active Dataset:</n-text>
+            <n-text strong>{{ t('search.activeDataset') }}</n-text>
             <n-select
               v-model:value="selectedDatasetId"
               :options="datasetOptions"
-              placeholder="Select a dataset"
+              :placeholder="t('search.selectDataset')"
               style="min-width: 260px"
               :loading="dsLoading"
               @update:value="handleSwitch"
@@ -22,9 +22,9 @@
       </n-card>
 
       <!-- Search form -->
-      <n-card title="Protein Sequence Search">
+      <n-card :title="t('search.title')">
         <n-space vertical :size="16">
-          <n-form-item label="Sequence (FASTA or raw amino acids)" :show-feedback="false">
+          <n-form-item :label="t('search.seqLabel')" :show-feedback="false">
             <n-input
               v-model:value="sequence"
               type="textarea"
@@ -35,15 +35,15 @@
           </n-form-item>
 
           <n-space>
-            <n-form-item label="Top K" :show-feedback="false" style="width: 120px">
+            <n-form-item :label="t('search.topK')" :show-feedback="false" style="width: 120px">
               <n-input-number v-model:value="topK" :min="1" :max="100" />
             </n-form-item>
-            <n-form-item label="Pooling" :show-feedback="false" style="width: 140px">
+            <n-form-item :label="t('search.pooling')" :show-feedback="false" style="width: 140px">
               <n-select v-model:value="pooling" :options="poolingOptions" />
             </n-form-item>
           </n-space>
 
-          <n-alert v-if="noDatasetError" type="warning" title="No active dataset. Please activate a dataset first." />
+          <n-alert v-if="noDatasetError" type="warning" :title="t('search.noDataset')" />
 
           <n-space>
             <n-button
@@ -52,37 +52,23 @@
               :disabled="!sequence.trim() || status === 'pending'"
               @click="handleSubmit"
             >
-              Search
+              {{ t('search.btnSearch') }}
             </n-button>
-            <n-button v-if="status === 'pending'" @click="handleCancel">Cancel</n-button>
+            <n-button v-if="status === 'pending'" @click="handleCancel">{{ t('search.btnCancel') }}</n-button>
           </n-space>
         </n-space>
       </n-card>
 
-      <!-- Status -->
-      <n-card v-if="status !== 'idle'" size="small">
-        <n-space align="center">
-          <n-spin v-if="status === 'pending'" size="small" />
-          <n-icon v-else-if="status === 'done'" color="#18a058" size="18"><CheckmarkCircleOutline /></n-icon>
-          <n-icon v-else color="#d03050" size="18"><CloseCircleOutline /></n-icon>
-          <n-text>{{ statusText }}</n-text>
-          <template v-if="status === 'pending' && indexStatus === 'loading'">
-            <n-divider vertical />
-            <n-text depth="3" style="font-size: 0.8rem">Loading index from disk...</n-text>
-          </template>
-          <template v-if="meta">
-            <n-divider vertical />
-            <n-text depth="3" style="font-size: 0.8rem">
-              ESM2: {{ meta.esm_time?.toFixed(2) }}s
-              <template v-if="meta.index_load_time > 0"> | Index load: {{ meta.index_load_time?.toFixed(2) }}s</template>
-              | FAISS: {{ meta.faiss_time?.toFixed(2) }}s | DB: {{ meta.db_time?.toFixed(2) }}s
-            </n-text>
-          </template>
-        </n-space>
-      </n-card>
+      <!-- Progress steps -->
+      <SearchProgress
+        v-if="status !== 'idle'"
+        :phase="phase"
+        :times="meta"
+        :error="errorMsg"
+      />
 
       <!-- Results -->
-      <n-card v-if="status === 'done' && result?.length" title="Results">
+      <n-card v-if="status === 'done' && result?.length" :title="t('search.results')">
         <n-data-table
           :columns="resultColumns"
           :data="result"
@@ -98,19 +84,23 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { h } from 'vue'
-import { NTag, NText, NTooltip, NEllipsis } from 'naive-ui'
-import { CheckmarkCircleOutline, CloseCircleOutline } from '@vicons/ionicons5'
+import { NTag, NText, NEllipsis } from 'naive-ui'
 import { submitSearch, getResult } from '../api/proteinSearch'
 import { listDatasets, switchDataset } from '../api/buildApi'
+import { useI18n } from '../i18n/index.js'
+import SearchProgress from '../components/SearchProgress.vue'
+
+const { t } = useI18n()
 
 const sequence = ref('')
 const topK = ref(5)
 const pooling = ref('mean')
 const status = ref('idle')
+const phase = ref('pending')
 const taskId = ref(null)
 const result = ref(null)
 const meta = ref(null)
-const indexStatus = ref('unknown')
+const errorMsg = ref(null)
 const noDatasetError = ref(false)
 const pollTimer = ref(null)
 
@@ -119,53 +109,40 @@ const activeDatasetId = ref(null)
 const selectedDatasetId = ref(null)
 const dsLoading = ref(false)
 
-const poolingOptions = [
-  { label: 'Mean', value: 'mean' },
-  { label: 'CLS', value: 'cls' },
-]
+const poolingOptions = computed(() => [
+  { label: t('search.poolingMean'), value: 'mean' },
+  { label: t('search.poolingCls'), value: 'cls' },
+])
 
 const activeEntry = computed(() => datasets.value.find(d => d.id === activeDatasetId.value))
 
 const datasetOptions = computed(() =>
   datasets.value
     .filter(d => d.status === 'ready')
-    .map(d => ({
-      label: `${d.name} (${d.algorithm})`,
-      value: d.id,
-    }))
+    .map(d => ({ label: `${d.name} (${d.algorithm})`, value: d.id }))
 )
 
-const statusText = computed(() => {
-  if (status.value === 'pending') {
-    if (indexStatus.value === 'loading') return `Loading index... (task: ${taskId.value?.slice(0, 8)})`
-    return `Searching... (task: ${taskId.value?.slice(0, 8)})`
-  }
-  if (status.value === 'done') return `Done — ${result.value?.length || 0} results`
-  if (status.value === 'error') return 'Search failed'
-  return ''
-})
-
-const resultColumns = [
+const resultColumns = computed(() => [
   { title: '#', key: 'id', width: 70 },
   {
-    title: 'Header',
+    title: t('search.col.header'),
     key: 'header',
     render: (row) => h(NEllipsis, { style: 'max-width: 200px' }, { default: () => row.header || '—' }),
   },
   {
-    title: 'Sequence',
+    title: t('search.col.sequence'),
     key: 'sequence',
     render: (row) => h(NEllipsis, { style: 'max-width: 180px' }, { default: () => row.sequence || '—' }),
   },
-  { title: 'KO', key: 'ko', width: 90 },
-  { title: 'EC', key: 'ec', width: 90 },
+  { title: t('search.col.ko'), key: 'ko', width: 90 },
+  { title: t('search.col.ec'), key: 'ec', width: 90 },
   {
-    title: 'Distance',
+    title: t('search.col.distance'),
     key: 'faiss_distance',
     width: 100,
     render: (row) => h(NTag, { type: 'info', size: 'small', round: true }, { default: () => row.faiss_distance?.toFixed(4) }),
   },
-]
+])
 
 async function loadDatasets() {
   dsLoading.value = true
@@ -193,9 +170,10 @@ async function handleSwitch(id) {
 async function handleSubmit() {
   noDatasetError.value = false
   status.value = 'pending'
+  phase.value = 'pending'
   result.value = null
   meta.value = null
-  indexStatus.value = 'unknown'
+  errorMsg.value = null
   try {
     const id = await submitSearch(sequence.value, topK.value, pooling.value)
     taskId.value = id
@@ -213,16 +191,23 @@ async function handleSubmit() {
 async function pollResult(id) {
   try {
     const task = await getResult(id)
-    if (task.index_status) indexStatus.value = task.index_status
+    // Map index_status / phase field to progress step
+    if (task.phase) {
+      phase.value = task.phase
+    } else if (task.index_status === 'loading') {
+      phase.value = 'loading_index'
+    }
     if (task.status === 'done') {
       clearInterval(pollTimer.value)
       status.value = 'done'
+      phase.value = 'done'
       result.value = task.result
       meta.value = task.times
     } else if (task.status === 'error') {
       clearInterval(pollTimer.value)
       status.value = 'error'
-      window.$message?.error(task.error || 'Search error')
+      phase.value = 'error'
+      errorMsg.value = task.error || 'Search error'
     }
   } catch {}
 }
@@ -230,8 +215,9 @@ async function pollResult(id) {
 function handleCancel() {
   clearInterval(pollTimer.value)
   status.value = 'idle'
+  phase.value = 'pending'
   taskId.value = null
-  indexStatus.value = 'unknown'
+  errorMsg.value = null
 }
 
 onMounted(loadDatasets)
