@@ -33,7 +33,7 @@ def cmd_gpu(args: list[str]) -> None:
 
 def cmd_cancel(args: list[str]) -> None:
     if not args:
-        print("Usage: \\cancel <task_id>"); return
+        print("Usage: cancel <task_id>"); return
     client = get_client()
     try:
         result = client.call("gpu.cancel", {"task_id": args[0]})

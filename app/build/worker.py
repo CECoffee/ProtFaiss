@@ -114,7 +114,7 @@ def run_build_job(config: dict) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="FaaIndex build worker")
+    parser = argparse.ArgumentParser(description="ProtFaiss build worker")
     parser.add_argument("--config", required=True, help="Path to build_config.json")
     args = parser.parse_args()
 

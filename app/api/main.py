@@ -13,7 +13,7 @@ from app.core.config import CORS_ORIGINS
 from app.api.ipc_client import init_client, close_client, get_client, IpcError
 from app.api.routes import auth, search, build, datasets, users, gpu, health
 
-app = FastAPI(title="FaaIndex API")
+app = FastAPI(title="ProtFaiss API")
 
 app.add_middleware(
     CORSMiddleware,

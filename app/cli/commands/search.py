@@ -6,7 +6,7 @@ from app.cli.ipc_client import get_client, IpcError
 
 def run(args: list[str]) -> None:
     if not args:
-        print("Usage: \\search <sequence> [--top_k N] [--pooling mean|max]")
+        print("Usage: search <sequence> [--top_k N] [--pooling mean|max]")
         return
 
     sequence = args[0]

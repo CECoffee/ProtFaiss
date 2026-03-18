@@ -7,7 +7,7 @@ from app.cli.ipc_client import get_client, IpcError
 
 def cmd_build(args: list[str]) -> None:
     if not args:
-        print("Usage: \\build <fasta_path> [--name NAME] [--algorithm flat|ivfpq|hnsw]")
+        print("Usage: build <fasta_path> [--name NAME] [--algorithm flat|ivfpq|hnsw]")
         return
 
     fasta_path = args[0]
@@ -61,7 +61,7 @@ def cmd_build(args: list[str]) -> None:
 
 def cmd_build_status(args: list[str]) -> None:
     if not args:
-        print("Usage: \\build-status <dataset_id>"); return
+        print("Usage: build-status <dataset_id>"); return
     client = get_client()
     try:
         status = client.call("build.status", {"dataset_id": args[0]})

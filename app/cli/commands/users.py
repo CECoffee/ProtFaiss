@@ -24,7 +24,7 @@ def cmd_users(args: list[str]) -> None:
 
 def cmd_user(args: list[str]) -> None:
     if not args:
-        print("Usage: \\user <user_id>"); return
+        print("Usage: user <user_id>"); return
     client = get_client()
     try:
         user = client.call("user.get", {"user_id": args[0]})
@@ -36,7 +36,7 @@ def cmd_user(args: list[str]) -> None:
 
 def cmd_useradd(args: list[str]) -> None:
     if len(args) < 2:
-        print("Usage: \\useradd <username> <password> [email]"); return
+        print("Usage: useradd <username> <password> [email]"); return
     params = {"username": args[0], "password": args[1]}
     if len(args) >= 3:
         params["email"] = args[2]
@@ -50,7 +50,7 @@ def cmd_useradd(args: list[str]) -> None:
 
 def cmd_userdel(args: list[str]) -> None:
     if not args:
-        print("Usage: \\userdel <user_id>"); return
+        print("Usage: userdel <user_id>"); return
     confirm = input(f"Delete user {args[0][:8]}? [y/N] ").strip().lower()
     if confirm != "y":
         print("Cancelled."); return
