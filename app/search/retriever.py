@@ -36,12 +36,6 @@ class ShardSet:
 _CACHE: OrderedDict[str, ShardSet] = OrderedDict()
 _CACHE_LOCK = threading.RLock()
 
-# Legacy globals kept for backward compatibility with main.py startup
-FAISS_SHARDS: List[faiss.Index] = []
-FAISS_SHARD_LOCKS: List[threading.Lock] = []
-_GPU_RESOURCES: List = []
-_ACTIVE_DATASET_ID: Optional[str] = None
-
 
 def _get_max_cached() -> int:
     return config_loader.get("scheduler", "max_cached_datasets", 4)
@@ -145,34 +139,6 @@ def unload_dataset(dataset_id: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Legacy load_shards / swap_active_dataset (used by main.py startup)
-# ---------------------------------------------------------------------------
-
-def load_shards(shard_dir: str = None):
-    """
-    Load shards for the default/active dataset.
-    Updates legacy globals for backward compatibility.
-    """
-    global FAISS_SHARDS, FAISS_SHARD_LOCKS, _GPU_RESOURCES, _ACTIVE_DATASET_ID
-    shard_dir = shard_dir or FAISS_SHARD_DIR
-
-    # Use a synthetic dataset_id based on the directory path
-    dataset_id = f"__legacy__{shard_dir}"
-    shard_set = get_or_load_shards(dataset_id, shard_dir)
-
-    FAISS_SHARDS = shard_set.shards
-    FAISS_SHARD_LOCKS = shard_set.locks
-    _GPU_RESOURCES = shard_set.gpu_resources
-    _ACTIVE_DATASET_ID = dataset_id
-
-
-def swap_active_dataset(index_dir: str) -> int:
-    """Reload shards from index_dir. Returns number of shards loaded."""
-    load_shards(index_dir)
-    return len(FAISS_SHARDS)
-
-
-# ---------------------------------------------------------------------------
 # Search
 # ---------------------------------------------------------------------------
 
@@ -196,20 +162,14 @@ def blocking_faiss_search(
     dataset_id: Optional[str] = None,
     index_dir: Optional[str] = None,
 ):
-    """
-    Blocking search across shards.
-    If dataset_id + index_dir are provided, uses the LRU cache.
-    Otherwise falls back to legacy global FAISS_SHARDS.
-    """
+    """Blocking search across shards using the LRU cache."""
     import time as _time
     load_start = _time.time()
-    if dataset_id and index_dir:
-        shard_set = get_or_load_shards(dataset_id, index_dir)
-        shards = shard_set.shards
-        locks = shard_set.locks
-    else:
-        shards = FAISS_SHARDS
-        locks = FAISS_SHARD_LOCKS
+    if not dataset_id or not index_dir:
+        raise RuntimeError("dataset_id and index_dir are required")
+    shard_set = get_or_load_shards(dataset_id, index_dir)
+    shards = shard_set.shards
+    locks = shard_set.locks
     load_seconds = _time.time() - load_start
 
     if not shards:

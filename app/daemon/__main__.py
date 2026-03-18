@@ -1,0 +1,104 @@
+"""
+Daemon entry point: python -m app.daemon
+
+Startup sequence:
+  1. Log GPU status
+  2. Init ESM2 model
+  3. Init DB pool
+  4. Run DB migration + ensure admin user
+  5. Init GPU pool
+  6. Start GPU scheduler
+  7. Mark stale 'building' datasets as error
+  8. Write PID file
+  9. Start IPC TCP server
+ 10. Run asyncio event loop until shutdown signal
+
+Shutdown sequence:
+  1. Cancel VRAM timers
+  2. Stop GPU scheduler
+  3. Close DB pool
+  4. Stop IPC server
+  5. Remove PID file
+"""
+import asyncio
+import os
+
+from app.core.config import ESM2_MODEL_DIR, DATASETS_ROOT
+from app.core import config_loader
+from app.daemon.lifecycle import write_pid, remove_pid, register_signal_handlers
+from app.daemon.server import start_server, stop_server
+
+
+async def _run():
+    from app.core import gpu as _gpu
+    from app.core.encoder import init_model
+    from app.core.db import init_db_pool, close_db_pool
+    from app.auth.init_admin import ensure_admin
+    from app.scheduler.gpu_pool import init_pool
+    from app.scheduler.scheduler import init_scheduler, get_scheduler
+    from app.search import vram_timer
+    from app.build.dataset_db import blocking_list_all_datasets, blocking_update_dataset
+
+    print("[daemon] Starting up...")
+    _gpu.log_gpu_status()
+    init_model(ESM2_MODEL_DIR)
+    init_db_pool()
+    ensure_admin()
+
+    os.makedirs(DATASETS_ROOT, exist_ok=True)
+
+    total_slots = config_loader.get("scheduler", "total_gpu_slots", 4)
+    init_pool(total_slots)
+    print(f"[daemon] GPU pool initialized with {total_slots} slots")
+
+    scheduler = init_scheduler()
+    scheduler.start()
+
+    # Mark stale building datasets as error
+    try:
+        all_datasets = blocking_list_all_datasets()
+        for entry in all_datasets:
+            if entry.get("status") == "building":
+                blocking_update_dataset(entry["id"], {
+                    "status": "error",
+                    "error_msg": "Daemon restarted during build",
+                    "progress_step": "error",
+                })
+                print(f"[daemon] Marked stale build {entry['id']} as error")
+    except Exception as e:
+        print(f"[daemon] Dataset cleanup error: {e}")
+
+    write_pid()
+
+    host = config_loader.get("daemon", "ipc_host", "127.0.0.1")
+    port = config_loader.get("daemon", "ipc_port", 9812)
+    server = await start_server(host, port)
+
+    stop_event = asyncio.Event()
+
+    def _shutdown():
+        stop_event.set()
+
+    register_signal_handlers(_shutdown)
+
+    print("[daemon] Ready. Waiting for connections...")
+    await stop_event.wait()
+
+    print("[daemon] Shutting down...")
+    await vram_timer.cancel_all()
+
+    sched = get_scheduler()
+    if sched:
+        sched.stop()
+
+    from app.daemon.operations.build_ops import terminate_all_build_processes
+    terminate_all_build_processes()
+
+    close_db_pool()
+    await stop_server()
+    remove_pid()
+    print("[daemon] Goodbye.")
+
+
+if __name__ == "__main__":
+    asyncio.run(_run())

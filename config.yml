@@ -64,3 +64,11 @@ daemon:
   ipc_port: 9812
   # PID file directory
   pid_dir: "~/.protfaiss"
+
+api:
+  # HTTP server bind address
+  host: "0.0.0.0"
+  # HTTP server port
+  port: 8000
+  # Number of persistent IPC connections to the daemon
+  ipc_pool_size: 4

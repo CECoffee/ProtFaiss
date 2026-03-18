@@ -19,7 +19,6 @@ CORS_ORIGINS: List[str] = [
 
 # Dataset builder paths
 DATASETS_ROOT = "datasets"
-REGISTRY_PATH = "datasets/registry.json"
 
 # Hot-reloadable runtime config (see config.yml)
 CONFIG_YML_PATH = "config.yml"

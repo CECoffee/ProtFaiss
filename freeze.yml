@@ -194,6 +194,7 @@ dependencies:
       - transformers==4.57.1
       - typer==0.20.0
       - typing-inspection==0.4.2
+      - prompt-toolkit==3.0.51
       - uvicorn==0.38.0
       - websockets==15.0.1
 prefix: D:\SDKs\conda\envs\faiss
