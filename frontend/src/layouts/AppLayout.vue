@@ -13,7 +13,7 @@
     >
       <div class="logo" :class="{ collapsed }">
         <span class="logo-icon">🧬</span>
-        <span v-if="!collapsed" class="logo-text">FaaIndex</span>
+        <span v-if="!collapsed" class="logo-text">ProtFaiss</span>
       </div>
       <n-menu
         :collapsed="collapsed"
@@ -122,7 +122,7 @@ const pageTitles = computed(() => ({
   '/admin/users': t('page.users'),
   '/admin/system': t('page.system'),
 }))
-const pageTitle = computed(() => pageTitles.value[route.path] || 'FaaIndex')
+const pageTitle = computed(() => pageTitles.value[route.path] || 'ProtFaiss')
 
 const userInitial = computed(() => (auth.user?.username?.[0] || '?').toUpperCase())
 

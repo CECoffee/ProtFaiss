@@ -56,3 +56,11 @@ scheduler:
   build_base_priority: 100
   # 同时驻留 GPU 的数据集 FAISS 缓存数
   max_cached_datasets: 4
+
+daemon:
+  # IPC TCP server address (127.0.0.1 only — local connections)
+  ipc_host: "127.0.0.1"
+  # IPC TCP port
+  ipc_port: 9812
+  # PID file directory
+  pid_dir: "~/.protfaiss"

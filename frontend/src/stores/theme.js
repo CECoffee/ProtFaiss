@@ -1,7 +1,7 @@
 import { ref, computed, watchEffect } from 'vue'
 import { darkTheme } from 'naive-ui'
 
-const STORAGE_KEY = 'faaindex-theme'
+const STORAGE_KEY = 'protfaiss-theme'
 
 const mode = ref(localStorage.getItem(STORAGE_KEY) || 'system')
 

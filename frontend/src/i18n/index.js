@@ -2,7 +2,7 @@ import { ref, computed, watchEffect } from 'vue'
 import en from './en.js'
 import zh from './zh.js'
 
-const STORAGE_KEY = 'faaindex-locale'
+const STORAGE_KEY = 'protfaiss-locale'
 const messages = { en, zh }
 
 const locale = ref(localStorage.getItem(STORAGE_KEY) || 'en')

@@ -3,7 +3,7 @@
     <n-card class="login-card" :bordered="false">
       <div class="login-header">
         <span class="login-logo">🧬</span>
-        <n-h2 style="margin: 8px 0 4px">FaaIndex</n-h2>
+        <n-h2 style="margin: 8px 0 4px">ProtFaiss</n-h2>
         <n-text depth="3">{{ t('login.subtitle') }}</n-text>
       </div>
 
