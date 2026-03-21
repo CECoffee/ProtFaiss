@@ -54,11 +54,11 @@ async def _run():
     scheduler = init_scheduler()
     scheduler.start()
 
-    # Mark stale building datasets as error
+    # Mark stale building/importing datasets as error
     try:
         all_datasets = blocking_list_all_datasets()
         for entry in all_datasets:
-            if entry.get("status") == "building":
+            if entry.get("status") in ("building", "importing"):
                 blocking_update_dataset(entry["id"], {
                     "status": "error",
                     "error_msg": "Daemon restarted during build",
@@ -93,6 +93,9 @@ async def _run():
 
     from app.daemon.operations.build_ops import terminate_all_build_processes
     terminate_all_build_processes()
+
+    from app.daemon.operations.export_import_ops import terminate_all_export_import_processes
+    terminate_all_export_import_processes()
 
     close_db_pool()
     await stop_server()

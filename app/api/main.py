@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import CORS_ORIGINS
 from app.api.ipc_client import init_client, close_client, get_client, IpcError
-from app.api.routes import auth, search, build, datasets, users, gpu, health
+from app.api.routes import auth, search, build, datasets, users, gpu, health, export_import
 
 app = FastAPI(title="ProtFaiss API")
 
@@ -29,6 +29,7 @@ app.include_router(datasets.router)
 app.include_router(users.router)
 app.include_router(gpu.router)
 app.include_router(health.router)
+app.include_router(export_import.router)
 
 
 @app.on_event("startup")

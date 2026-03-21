@@ -13,7 +13,7 @@ from typing import Callable, List, Optional
 
 from app.cli.ipc_client import get_client, IpcError
 from app.cli.commands import (
-    search, build, datasets, gpu, users, config as cfg_cmd, system,
+    search, build, datasets, gpu, users, config as cfg_cmd, system, export_import,
 )
 
 _HISTORY_FILE = Path(os.path.expanduser("~/.protfaiss/cli_history"))
@@ -76,6 +76,26 @@ _COMMANDS: dict[str, CommandEntry] = {
         description="Set dataset visibility",
         category="Datasets",
         flags=["public", "private"],
+    ),
+    "export": CommandEntry(
+        handler=export_import.cmd_export,
+        usage="export <dataset_id> [--output <path>]",
+        description="Export dataset to .7z archive",
+        category="Datasets",
+        flags=["--output"],
+    ),
+    "export-status": CommandEntry(
+        handler=export_import.cmd_export_status,
+        usage="export-status <dataset_id>",
+        description="Check export job status",
+        category="Datasets",
+    ),
+    "import": CommandEntry(
+        handler=export_import.cmd_import,
+        usage="import <archive_path> [--name NAME]",
+        description="Import dataset from .7z archive",
+        category="Datasets",
+        flags=["--name"],
     ),
     "gpu": CommandEntry(
         handler=gpu.cmd_gpu,

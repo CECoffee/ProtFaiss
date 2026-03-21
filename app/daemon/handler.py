@@ -68,4 +68,5 @@ def _load_operations():
         user_ops,
         gpu_ops,
         config_ops,
+        export_import_ops,
     )
