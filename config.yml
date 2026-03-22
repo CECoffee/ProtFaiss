@@ -72,3 +72,40 @@ api:
   port: 8000
   # Number of persistent IPC connections to the daemon
   ipc_pool_size: 4
+
+# Redis — shared task state store (required in cluster mode)
+redis:
+  host: "localhost"
+  port: 6379
+  db: 0
+  password: ""
+
+# Shared storage — must be NFS-mounted on all nodes in cluster mode
+storage:
+  # Overrides DATASETS_ROOT from core.config if set (leave empty for legacy path)
+  datasets_root: ""
+  # Overrides ESM2_MODEL_DIR from core.config if set (leave empty for legacy path)
+  models_root: ""
+
+# Distributed cluster configuration
+cluster:
+  # false = single-node legacy mode; true = multi-node worker dispatch mode
+  enabled: false
+  # Control plane IPC address that workers connect to for registration/heartbeats
+  # (same as daemon.ipc_host/ipc_port — listed here for clarity)
+  control_plane_host: "127.0.0.1"
+  control_plane_port: 9812
+  # Task result TTL in Redis (seconds)
+  task_ttl: 600
+  # Worker heartbeat interval (seconds)
+  heartbeat_interval: 5
+  # Worker considered dead after this many seconds without a heartbeat
+  heartbeat_timeout: 15
+
+# GPU Worker node configuration (used when running app.worker)
+worker:
+  # Address this worker listens on for task dispatch from the control plane
+  host: "0.0.0.0"
+  port: 9820
+  # Human-readable node identifier (defaults to hostname if empty)
+  node_id: ""

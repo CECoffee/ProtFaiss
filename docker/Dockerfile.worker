@@ -1,0 +1,27 @@
+# GPU Worker Dockerfile
+# Runs the worker node: ESM2 encoding, FAISS search, index building.
+# Requires NVIDIA GPU with CUDA 13.x (torch 2.9.0+cu130).
+
+FROM continuumio/miniconda3:24.1.2-0
+
+WORKDIR /app
+
+# Install conda environment from freeze.yml (includes torch+cuda, faiss-gpu)
+COPY freeze.yml .
+RUN conda env create -f freeze.yml -n protfaiss && \
+    conda clean -afy
+
+# Install redis async client and py7zr
+RUN conda run -n protfaiss pip install redis[hiredis]>=5.0 py7zr>=0.20
+
+# Copy application code
+COPY app/ ./app/
+COPY config.yml .
+
+ENV PATH=/opt/conda/envs/protfaiss/bin:$PATH
+ENV PYTHONUNBUFFERED=1
+
+# Worker IPC port (control plane connects here for task dispatch)
+EXPOSE 9820
+
+CMD ["python", "-m", "app.worker"]

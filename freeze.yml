@@ -154,8 +154,9 @@ dependencies:
   - zstandard=0.25.0=py310h1637853_1
   - zstd=1.5.7=hbeecb71_2
   - pip:
-      - aiofiles==24.1.0
+      - aiofiles==25.1.0
       - aiohttp-sse-client==0.2.1
+      - aioredis==2.0.1
       - annotated-doc==0.0.3
       - annotated-types==0.7.0
       - bcrypt==3.2.2
@@ -181,6 +182,7 @@ dependencies:
       - pydub==0.25.1
       - pygments==2.19.2
       - python-multipart==0.0.20
+      - redis==7.1.0
       - rich==14.2.0
       - ruff==0.14.4
       - safehttpx==0.1.7

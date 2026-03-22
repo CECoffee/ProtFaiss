@@ -1,0 +1,60 @@
+# NFS PersistentVolumes for shared storage
+# Adjust nfs.server and nfs.path to match your NFS server.
+---
+# Datasets volume (FASTA files, FAISS indices, build configs)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: protfaiss-datasets-pv
+spec:
+  capacity:
+    storage: 500Gi
+  accessModes:
+    - ReadWriteMany      # Multiple workers can mount simultaneously
+  nfs:
+    server: "192.168.1.100"           # Replace with your NFS server IP
+    path: "/exports/protfaiss/datasets"
+  mountOptions:
+    - hard
+    - nfsvers=4.1
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: protfaiss-datasets-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 500Gi
+  volumeName: protfaiss-datasets-pv
+---
+# Models volume (ESM2 model weights — large, read-only after first load)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: protfaiss-models-pv
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadOnlyMany       # All workers read the same model weights
+  nfs:
+    server: "192.168.1.100"           # Replace with your NFS server IP
+    path: "/exports/protfaiss/models"
+  mountOptions:
+    - hard
+    - nfsvers=4.1
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: protfaiss-models-pvc
+spec:
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 20Gi
+  volumeName: protfaiss-models-pv

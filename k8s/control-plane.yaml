@@ -1,0 +1,114 @@
+# ProtFaiss Control Plane Deployment
+# Runs the daemon (IPC server, scheduler, auth/dataset CRUD)
+# No GPU required; runs on any CPU node.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: protfaiss-control-plane
+  labels:
+    app: protfaiss-control-plane
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: protfaiss-control-plane
+  template:
+    metadata:
+      labels:
+        app: protfaiss-control-plane
+    spec:
+      containers:
+        - name: daemon
+          image: protfaiss-control-plane:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.daemon"]
+          ports:
+            - containerPort: 9812
+              name: ipc
+          env:
+            - name: ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: protfaiss-secrets
+                  key: admin-username
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: protfaiss-secrets
+                  key: admin-password
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yml
+              subPath: config.yml
+            - name: shared-datasets
+              mountPath: /shared/datasets
+            - name: shared-models
+              mountPath: /shared/models
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2"
+          readinessProbe:
+            tcpSocket:
+              port: 9812
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 9812
+            initialDelaySeconds: 30
+            periodSeconds: 10
+        - name: api
+          image: protfaiss-control-plane:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.api"]
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: protfaiss-secrets
+                  key: secret-key
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yml
+              subPath: config.yml
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1"
+      volumes:
+        - name: config
+          configMap:
+            name: protfaiss-config
+        - name: shared-datasets
+          persistentVolumeClaim:
+            claimName: protfaiss-datasets-pvc
+        - name: shared-models
+          persistentVolumeClaim:
+            claimName: protfaiss-models-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: protfaiss-control-plane
+spec:
+  selector:
+    app: protfaiss-control-plane
+  ports:
+    - name: ipc
+      port: 9812
+      targetPort: 9812
+    - name: http
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
