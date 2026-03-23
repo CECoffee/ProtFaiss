@@ -39,9 +39,18 @@ async def _run():
     print(f"[worker] Starting node: {node_id} on {host}:{port}")
     _gpu.log_gpu_status()
 
-    # Detect available GPU slots (one slot per GPU device)
+    # Detect available GPU slots and validate against config
     gpu_devices = _gpu.get_available_devices()
-    gpu_slots = len(gpu_devices) if gpu_devices else 1
+    physical_slots = len(gpu_devices) if gpu_devices else 1
+    configured_slots = config_loader.get("scheduler", "total_gpu_slots", 1)
+    if configured_slots > physical_slots:
+        print(
+            f"[worker] WARNING: scheduler.total_gpu_slots={configured_slots} exceeds "
+            f"available GPU count ({physical_slots}); capping to {physical_slots}."
+        )
+        gpu_slots = physical_slots
+    else:
+        gpu_slots = configured_slots
 
     model_dir = config_loader.get("storage", "models_root", "") or ESM2_MODEL_DIR
     init_model(model_dir)
