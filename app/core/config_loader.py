@@ -47,6 +47,14 @@ _DEFAULTS: dict = {
         "hnsw_ef_construction": 200,
         "add_batch_size": 200000,
     },
+    "database": {
+        "host": "localhost",
+        "port": 5432,
+        "dbname": "protein_db",
+        "user": "postgres",
+        "password": "",
+        "max_connections": 20,
+    },
 }
 
 

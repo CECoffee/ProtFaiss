@@ -59,7 +59,7 @@ scheduler:
 
 daemon:
   # IPC TCP server address (127.0.0.1 for local dev; 0.0.0.0 in K8s/cluster)
-  ipc_host: "127.0.0.1"
+  ipc_host: "0.0.0.0"
   # IPC TCP port (Windows 动态保留范围 9788-9887)
   ipc_port: 9002
   # PID file directory
@@ -72,6 +72,16 @@ api:
   port: 8000
   # Number of persistent IPC connections to the daemon
   ipc_pool_size: 4
+
+# PostgreSQL database connection
+database:
+  host: "localhost"
+  port: 5432
+  dbname: "protein_db"
+  user: "postgres"
+  # 生产环境推荐通过 DB_PASSWORD 环境变量传入，避免明文写入配置文件
+  password: "0909"
+  max_connections: 20
 
 # Redis — shared task state store (required in cluster mode)
 redis:

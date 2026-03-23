@@ -1,20 +1,19 @@
+import os
+import sys
 import psycopg2
 import random
 import string
 
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 5432,
-    "dbname": "protein_db",
-    "user": "postgres",
-    "password": "0909"
-}
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from app.core.db import get_db_config
+
 
 def random_protein_sequence(length):
     return ''.join(random.choices("ACDEFGHIKLMNPQRSTVWY", k=length))
 
 def main():
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = psycopg2.connect(**get_db_config())
     cur = conn.cursor()
     # cur.execute("""
     #     CREATE TABLE IF NOT EXISTS proteins_mock (

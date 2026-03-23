@@ -1,5 +1,7 @@
 from typing import Dict, List
 
+# Legacy fallback
+# 实际连接参数由 app.core.db.get_db_config() 解析（config.yml 优先）。
 DB_CONFIG: Dict[str, object] = {
     "host": "localhost",
     "port": 5432,

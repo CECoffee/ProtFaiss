@@ -1,15 +1,13 @@
+import os
+import sys
 import psycopg2
 import pandas as pd
 
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 5432,
-    "dbname": "protein_db",
-    "user": "postgres",
-    "password": "0909"
-}
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-conn = psycopg2.connect(**DB_CONFIG)
+from app.core.db import get_db_config
+
+conn = psycopg2.connect(**get_db_config())
 df = pd.read_sql("""SELECT sequence FROM "proteins_mock_10M" ORDER BY id""", conn)
 df.to_csv("../proteins_mock_10m.csv", index=False)
 conn.close()
