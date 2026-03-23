@@ -94,7 +94,7 @@ async def _run():
     write_pid()
 
     host = config_loader.get("daemon", "ipc_host", "127.0.0.1")
-    port = config_loader.get("daemon", "ipc_port", 9812)
+    port = config_loader.get("daemon", "ipc_port", 9002)
     server = await start_server(host, port)
 
     stop_event = asyncio.Event()

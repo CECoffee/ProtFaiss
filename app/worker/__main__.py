@@ -51,7 +51,7 @@ async def _run():
 
     # Register with control plane
     cp_host = config_loader.get("cluster", "control_plane_host", "127.0.0.1")
-    cp_port = config_loader.get("cluster", "control_plane_port", 9812)
+    cp_port = config_loader.get("cluster", "control_plane_port", 9002)
     advertise_host = _resolve_advertise_host(host)
 
     await _register_with_control_plane(

@@ -58,10 +58,10 @@ scheduler:
   max_cached_datasets: 4
 
 daemon:
-  # IPC TCP server address (127.0.0.1 only — local connections)
+  # IPC TCP server address (127.0.0.1 for local dev; 0.0.0.0 in K8s/cluster)
   ipc_host: "127.0.0.1"
-  # IPC TCP port
-  ipc_port: 9812
+  # IPC TCP port (Windows 动态保留范围 9788-9887)
+  ipc_port: 9002
   # PID file directory
   pid_dir: "~/.protfaiss"
 
@@ -90,11 +90,11 @@ storage:
 # Distributed cluster configuration
 cluster:
   # false = single-node legacy mode; true = multi-node worker dispatch mode
-  enabled: false
+  enabled: true
   # Control plane IPC address that workers connect to for registration/heartbeats
   # (same as daemon.ipc_host/ipc_port — listed here for clarity)
   control_plane_host: "127.0.0.1"
-  control_plane_port: 9812
+  control_plane_port: 9002
   # Task result TTL in Redis (seconds)
   task_ttl: 600
   # Worker heartbeat interval (seconds)
@@ -106,6 +106,6 @@ cluster:
 worker:
   # Address this worker listens on for task dispatch from the control plane
   host: "0.0.0.0"
-  port: 9820
+  port: 9100
   # Human-readable node identifier (defaults to hostname if empty)
-  node_id: ""
+  node_id: "win"

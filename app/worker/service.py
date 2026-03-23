@@ -211,7 +211,7 @@ async def _notify_task_done(
     status: str,
 ) -> None:
     cp_host = config_loader.get("cluster", "control_plane_host", "127.0.0.1")
-    cp_port = config_loader.get("cluster", "control_plane_port", 9812)
+    cp_port = config_loader.get("cluster", "control_plane_port", 9002)
     try:
         from app.daemon.protocol import read_message, write_message, make_request
         reader, writer = await asyncio.wait_for(

@@ -56,11 +56,11 @@ class IpcClient:
         self._pool: list[_Connection] = []
         self._pool_lock = asyncio.Lock()
         self._host: str = "127.0.0.1"
-        self._port: int = 9812
+        self._port: int = 9002
 
     async def connect(self):
         self._host = config_loader.get("daemon", "ipc_host", "127.0.0.1")
-        self._port = config_loader.get("daemon", "ipc_port", 9812)
+        self._port = config_loader.get("daemon", "ipc_port", 9002)
         for _ in range(_POOL_SIZE):
             conn = await self._new_connection()
             self._pool.append(conn)

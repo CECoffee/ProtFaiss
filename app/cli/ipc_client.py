@@ -25,7 +25,7 @@ class IpcError(Exception):
 class CliIpcClient:
     def __init__(self, host: str = None, port: int = None):
         self._host = host or config_loader.get("daemon", "ipc_host", "127.0.0.1")
-        self._port = port or config_loader.get("daemon", "ipc_port", 9812)
+        self._port = port or config_loader.get("daemon", "ipc_port", 9002)
         self._sock: socket.socket | None = None
         self._admin_context: dict = {"source": "cli", "role": "admin", "user_id": None}
 
