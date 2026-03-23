@@ -7,6 +7,10 @@ For search tasks:
 
 For build tasks:
   Any worker with available slots and 'build' capability.
+
+Admin-status filtering:
+  - Workers with admin_status == 'unavailable' are excluded from all scheduling.
+  - Workers with admin_status == 'hidden' are excluded unless is_admin=True.
 """
 from typing import List, Optional, TYPE_CHECKING
 
@@ -20,6 +24,7 @@ def select_worker_for_search(
     pool: "ClusterGpuPool",
     dataset_id: Optional[str],
     n_slots: int = 1,
+    is_admin: bool = False,
 ) -> "Optional[WorkerInfo]":
     """
     Select the best worker for a search task.
@@ -32,7 +37,10 @@ def select_worker_for_search(
     """
     eligible = [
         w for w in workers
-        if "search" in w.capabilities and pool.available_on_node(w.node_id) >= n_slots
+        if "search" in w.capabilities
+        and pool.available_on_node(w.node_id) >= n_slots
+        and w.admin_status != "unavailable"
+        and (is_admin or w.admin_status != "hidden")
     ]
     if not eligible:
         return None
@@ -49,11 +57,15 @@ def select_worker_for_build(
     workers: "List[WorkerInfo]",
     pool: "ClusterGpuPool",
     n_slots: int = 1,
+    is_admin: bool = False,
 ) -> "Optional[WorkerInfo]":
     """Select the least-loaded capable worker for a build task."""
     eligible = [
         w for w in workers
-        if "build" in w.capabilities and pool.available_on_node(w.node_id) >= n_slots
+        if "build" in w.capabilities
+        and pool.available_on_node(w.node_id) >= n_slots
+        and w.admin_status != "unavailable"
+        and (is_admin or w.admin_status != "hidden")
     ]
     if not eligible:
         return None

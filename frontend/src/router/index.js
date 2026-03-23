@@ -25,6 +25,7 @@ const routes = [
           { path: '', redirect: '/admin/users' },
           { path: 'users', component: () => import('../views/admin/UsersView.vue') },
           { path: 'system', component: () => import('../views/admin/SystemView.vue') },
+          { path: 'cluster', component: () => import('../views/admin/ClusterView.vue') },
         ],
       },
     ],

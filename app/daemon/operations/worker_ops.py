@@ -46,6 +46,7 @@ async def worker_heartbeat(params: dict, context: dict) -> dict:
     node_id = params.get("node_id", "")
     cached_datasets = params.get("cached_datasets", [])
     running_tasks = params.get("running_tasks", 0)
+    metrics = params.get("metrics", {})
 
     registry = get_registry()
     worker = await registry.get_worker(node_id)
@@ -53,7 +54,7 @@ async def worker_heartbeat(params: dict, context: dict) -> dict:
         # Worker is unknown — control plane may have restarted; signal re-registration
         return {"ok": True, "registered": False}
 
-    await registry.heartbeat(node_id, cached_datasets, running_tasks)
+    await registry.heartbeat(node_id, cached_datasets, running_tasks, metrics)
     return {"ok": True, "registered": True}
 
 

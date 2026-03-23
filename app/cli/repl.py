@@ -13,7 +13,7 @@ from typing import Callable, List, Optional
 
 from app.cli.ipc_client import get_client, IpcError
 from app.cli.commands import (
-    search, build, datasets, gpu, users, config as cfg_cmd, system, export_import,
+    search, build, datasets, gpu, users, config as cfg_cmd, system, export_import, cluster,
 )
 
 _HISTORY_FILE = Path(os.path.expanduser("~/.protfaiss/cli_history"))
@@ -163,9 +163,21 @@ _COMMANDS: dict[str, CommandEntry] = {
         description="Daemon health check",
         category="System",
     ),
+    "cluster": CommandEntry(
+        handler=cluster.cmd_cluster,
+        usage="cluster",
+        description="List cluster workers with metrics",
+        category="Cluster",
+    ),
+    "cluster-set": CommandEntry(
+        handler=cluster.cmd_cluster_set,
+        usage="cluster-set <node_id> <available|unavailable|hidden>",
+        description="Set worker admin status",
+        category="Cluster",
+    ),
 }
 
-_CATEGORY_ORDER = ["Search", "Build", "Datasets", "GPU", "Users", "Config", "System"]
+_CATEGORY_ORDER = ["Search", "Build", "Datasets", "GPU", "Users", "Config", "System", "Cluster"]
 
 
 def _print_help() -> None:

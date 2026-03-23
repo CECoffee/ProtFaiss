@@ -13,6 +13,7 @@ import asyncio
 from typing import Optional
 
 from app.core import config_loader
+from app.worker.metrics import collect_metrics
 
 
 async def start_heartbeat(
@@ -57,6 +58,7 @@ async def _send_heartbeat(
                 "node_id": node_id,
                 "cached_datasets": cached_datasets,
                 "running_tasks": 0,  # TODO: track active tasks count
+                "metrics": collect_metrics(),
             },
             context={"role": "system"},
         )

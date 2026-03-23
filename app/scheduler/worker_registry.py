@@ -29,6 +29,8 @@ class WorkerInfo:
     cached_datasets: List[str] = field(default_factory=list)
     running_tasks: int = 0
     status: str = "online"     # online | draining | dead
+    admin_status: str = "available"  # available | unavailable | hidden
+    metrics: dict = field(default_factory=dict)
     registered_at: float = field(default_factory=time.time)
     last_seen: float = field(default_factory=time.time)
     client: Optional["WorkerClient"] = None
@@ -72,6 +74,7 @@ class WorkerRegistry:
         node_id: str,
         cached_datasets: List[str],
         running_tasks: int,
+        metrics: dict = None,
     ) -> None:
         async with self._lock:
             w = self._workers.get(node_id)
@@ -80,6 +83,8 @@ class WorkerRegistry:
                 w.cached_datasets = cached_datasets
                 w.running_tasks = running_tasks
                 w.status = "online"
+                if metrics:
+                    w.metrics = metrics
 
     async def set_client(self, node_id: str, client: "WorkerClient") -> None:
         async with self._lock:
@@ -87,14 +92,37 @@ class WorkerRegistry:
             if w:
                 w.client = client
 
-    async def get_online_workers(self) -> List[WorkerInfo]:
+    async def get_online_workers(
+        self,
+        include_unavailable: bool = False,
+        include_hidden: bool = False,
+    ) -> List[WorkerInfo]:
         timeout = config_loader.get("cluster", "heartbeat_timeout", 15)
         now = time.time()
         async with self._lock:
-            return [
-                w for w in self._workers.values()
-                if w.status == "online" and (now - w.last_seen) < timeout
-            ]
+            result = []
+            for w in self._workers.values():
+                if w.status != "online" or (now - w.last_seen) >= timeout:
+                    continue
+                if not include_unavailable and w.admin_status == "unavailable":
+                    continue
+                if not include_hidden and w.admin_status == "hidden":
+                    continue
+                result.append(w)
+            return result
+
+    async def set_admin_status(self, node_id: str, admin_status: str) -> bool:
+        """Set the admin-managed availability of a worker.
+
+        admin_status must be one of: 'available', 'unavailable', 'hidden'.
+        Returns False if the worker is not found.
+        """
+        async with self._lock:
+            w = self._workers.get(node_id)
+            if w is None:
+                return False
+            w.admin_status = admin_status
+            return True
 
     async def get_worker(self, node_id: str) -> Optional[WorkerInfo]:
         async with self._lock:
@@ -138,6 +166,8 @@ class WorkerRegistry:
                     "cached_datasets": w.cached_datasets,
                     "running_tasks": w.running_tasks,
                     "status": w.status,
+                    "admin_status": w.admin_status,
+                    "metrics": w.metrics,
                     "last_seen": w.last_seen,
                 }
                 for w in self._workers.values()

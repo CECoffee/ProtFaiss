@@ -14,6 +14,7 @@ _ADMIN_METHODS = {
     "config.reload", "config.get",
     "system.stats",
     "build.delete",
+    "cluster.list", "cluster.set_status", "cluster.set_hidden",
 }
 
 # Registry: method name → async handler coroutine function
@@ -70,4 +71,5 @@ def _load_operations():
         config_ops,
         export_import_ops,
         worker_ops,
+        cluster_ops,
     )

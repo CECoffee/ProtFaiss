@@ -49,9 +49,11 @@ def _blocking_get_pending_tasks() -> list:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, user_id, task_type, priority, gpu_slots, dataset_id, search_task_id "
-                "FROM gpu_tasks WHERE status = 'pending' "
-                "ORDER BY priority ASC, submitted_at ASC"
+                "SELECT gt.id, gt.user_id, gt.task_type, gt.priority, gt.gpu_slots, "
+                "gt.dataset_id, gt.search_task_id, u.role "
+                "FROM gpu_tasks gt JOIN users u ON u.id = gt.user_id "
+                "WHERE gt.status = 'pending' "
+                "ORDER BY gt.priority ASC, gt.submitted_at ASC"
             )
             return [
                 {
@@ -59,6 +61,7 @@ def _blocking_get_pending_tasks() -> list:
                     "priority": r[3], "gpu_slots": r[4],
                     "dataset_id": str(r[5]) if r[5] else None,
                     "search_task_id": r[6],
+                    "user_role": r[7] or "user",
                 }
                 for r in cur.fetchall()
             ]
@@ -519,7 +522,7 @@ class GpuScheduler:
         for t in running_now:
             user_running_count[t["user_id"]] = user_running_count.get(t["user_id"], 0) + 1
 
-        online_workers = await registry.get_online_workers()
+        online_workers = await registry.get_online_workers(include_hidden=True)
         if not online_workers:
             return  # No workers available; will retry next tick
 
@@ -531,15 +534,16 @@ class GpuScheduler:
             task_id = task["id"]
             dataset_id = task.get("dataset_id")
             n_slots = task.get("gpu_slots", 1)
+            is_admin = task.get("user_role") == "admin"
 
             quota = await loop.run_in_executor(None, _blocking_get_user_quota, user_id)
             if user_running_count.get(user_id, 0) >= quota:
                 continue
 
             if task["task_type"] == "search":
-                worker = select_worker_for_search(online_workers, pool, dataset_id, n_slots)
+                worker = select_worker_for_search(online_workers, pool, dataset_id, n_slots, is_admin)
             else:
-                worker = select_worker_for_build(online_workers, pool, n_slots)
+                worker = select_worker_for_build(online_workers, pool, n_slots, is_admin)
 
             if not worker:
                 continue
