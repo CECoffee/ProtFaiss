@@ -2,7 +2,7 @@
 
 gpu:
   # 主开关：false = 单卡模式（GPU 0），适用于单卡机器或调试
-  multi_gpu_enabled: true
+  multi_gpu_enabled: false
   # ESM2 编码使用的设备："auto"（选显存最多的 GPU）| "cuda:0" | "cpu"
   encoding_device: "auto"
   # FAISS 使用的 GPU 列表："auto"（所有可用 GPU）| [0, 1, 2]
