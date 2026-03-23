@@ -94,7 +94,8 @@
 
 <script setup>
 import { ref, computed, h, onMounted, onUnmounted } from 'vue'
-import { NTag, NButton, NSpace, NSwitch, NPopconfirm, NProgress } from 'naive-ui'import {
+import { NTag, NButton, NSpace, NSwitch, NPopconfirm, NProgress } from 'naive-ui'
+import {
   listDatasets, switchDataset, deleteDataset, setDatasetVisibility,
   exportDataset, getExportStatus, downloadExport,
   importDataset, getImportStatus,
