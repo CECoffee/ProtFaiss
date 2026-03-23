@@ -83,6 +83,7 @@ async def _run():
 
     print("[worker] Shutting down...")
     await stop_heartbeat(heartbeat_task)
+    await _deregister_from_control_plane(cp_host, cp_port, node_id)
     await stop_worker_server()
     close_db_pool()
     await close_redis()
@@ -137,6 +138,31 @@ async def _register_with_control_plane(
     except Exception as e:
         print(f"[worker] WARNING: Failed to register with control plane: {e}")
         print("[worker] Will retry via heartbeat mechanism.")
+
+
+async def _deregister_from_control_plane(
+    cp_host: str,
+    cp_port: int,
+    node_id: str,
+) -> None:
+    from app.daemon.protocol import read_message, write_message, make_request
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(cp_host, cp_port),
+            timeout=5.0,
+        )
+        req = make_request(
+            "worker.deregister",
+            {"node_id": node_id},
+            context={"role": "system"},
+        )
+        await write_message(writer, req)
+        await asyncio.wait_for(read_message(reader), timeout=5.0)
+        writer.close()
+        await writer.wait_closed()
+        print(f"[worker] Deregistered from control plane @ {cp_host}:{cp_port}")
+    except Exception as e:
+        print(f"[worker] WARNING: Failed to deregister from control plane: {e}")
 
 
 if __name__ == "__main__":

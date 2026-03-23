@@ -100,6 +100,19 @@ class WorkerRegistry:
         async with self._lock:
             return self._workers.get(node_id)
 
+    async def deregister(self, node_id: str) -> None:
+        """Gracefully remove a worker that has announced shutdown."""
+        async with self._lock:
+            w = self._workers.pop(node_id, None)
+            if w is None:
+                return
+            if w.client:
+                asyncio.create_task(w.client.close())
+        # Release GPU slots from ClusterGpuPool
+        from app.scheduler.cluster_pool import get_cluster_pool
+        get_cluster_pool().remove_node(node_id)
+        print(f"[registry] Worker deregistered: {node_id}")
+
     async def check_liveness(self) -> None:
         """Mark stale workers as dead. Called each scheduler tick."""
         timeout = config_loader.get("cluster", "heartbeat_timeout", 15)

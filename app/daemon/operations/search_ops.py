@@ -15,6 +15,12 @@ async def search_submit(params: dict, context: dict) -> dict:
     if not sequence:
         raise HandlerError(400, "sequence required")
 
+    from app.core import config_loader
+    if config_loader.get("cluster", "enabled", False):
+        from app.scheduler.cluster_pool import get_cluster_pool
+        if get_cluster_pool().total_slots == 0:
+            raise HandlerError(503, "No GPU workers online. Search is unavailable.")
+
     user_id = context.get("user_id")
     loop = asyncio.get_event_loop()
 

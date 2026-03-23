@@ -90,6 +90,17 @@ async def worker_task_done(params: dict, context: dict) -> dict:
     return {"ok": True}
 
 
+@register("worker.deregister")
+async def worker_deregister(params: dict, context: dict) -> dict:
+    node_id = params.get("node_id", "")
+    if not node_id:
+        return {"error": "node_id required"}
+
+    registry = get_registry()
+    await registry.deregister(node_id)
+    return {"ok": True}
+
+
 async def _connect_to_worker(node_id: str, address: str) -> None:
     """Establish a persistent WorkerClient connection to a newly registered worker."""
     from app.daemon.worker_client import WorkerClient

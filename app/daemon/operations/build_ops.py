@@ -61,6 +61,11 @@ async def build_submit(params: dict, context: dict) -> dict:
     if algorithm not in ("flat", "ivfpq", "hnsw"):
         raise HandlerError(400, "algorithm must be flat, ivfpq, or hnsw")
 
+    if _cluster_enabled():
+        from app.scheduler.cluster_pool import get_cluster_pool
+        if get_cluster_pool().total_slots == 0:
+            raise HandlerError(503, "No GPU workers online. Build is unavailable.")
+
     user_id = context["user_id"]
     name = params.get("name", "untitled")
 

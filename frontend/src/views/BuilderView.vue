@@ -7,6 +7,7 @@
 
       <!-- Build form -->
       <n-card v-if="buildStatus === 'idle'">
+        <n-alert v-if="!gpuStore.gpuAvailable" type="error" :title="t('build.noGpu')" style="margin-bottom: 16px" />
         <n-form :model="form" label-placement="top">
           <n-form-item :label="t('build.fileLabel')">
             <n-upload :max="1" accept=".fasta,.fa,.faa" :default-upload="false" @change="onFileChange">
@@ -76,7 +77,7 @@
             </n-collapse-item>
           </n-collapse>
 
-          <n-button type="primary" :disabled="!selectedFile || !form.name" style="margin-top: 16px" @click="handleSubmit">
+          <n-button type="primary" :disabled="!selectedFile || !form.name || !gpuStore.gpuAvailable" style="margin-top: 16px" @click="handleSubmit">
             {{ t('build.btnStart') }}
           </n-button>
         </n-form>
@@ -119,12 +120,16 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { CloudUploadOutline, CheckmarkCircleOutline, CloseCircleOutline } from '@vicons/ionicons5'
 import { submitBuild, getBuildStatus } from '../api/buildApi'
 import { useI18n } from '../i18n/index.js'
+import { useGpuStore } from '../stores/gpu'
 
 const { t } = useI18n()
+const gpuStore = useGpuStore()
+
+onMounted(() => gpuStore.fetchQueue())
 
 const selectedFile = ref(null)
 const buildStatus = ref('idle')
