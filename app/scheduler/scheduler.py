@@ -439,7 +439,7 @@ class GpuScheduler:
             task_id = task["id"]
 
             quota = _blocking_get_user_quota(user_id)
-            if user_running_count.get(user_id, 0) >= quota:
+            if quota > 0 and user_running_count.get(user_id, 0) >= quota:
                 continue
             if not gpu_pool.allocate(task_id, task["gpu_slots"]):
                 continue
@@ -537,7 +537,7 @@ class GpuScheduler:
             is_admin = task.get("user_role") == "admin"
 
             quota = await loop.run_in_executor(None, _blocking_get_user_quota, user_id)
-            if user_running_count.get(user_id, 0) >= quota:
+            if quota > 0 and user_running_count.get(user_id, 0) >= quota:
                 continue
 
             if task["task_type"] == "search":

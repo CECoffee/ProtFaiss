@@ -43,11 +43,12 @@ async def user_update(params: dict, context: dict) -> dict:
     patch = {k: v for k, v in params.items() if k != "user_id" and v is not None}
 
     if "gpu_quota" in patch:
-        total_slots = config_loader.get("scheduler", "total_gpu_slots", 4)
         if patch["gpu_quota"] < 0:
             raise HandlerError(400, "gpu_quota must be >= 0")
-        if patch["gpu_quota"] > total_slots:
-            raise HandlerError(400, f"gpu_quota cannot exceed system total_gpu_slots ({total_slots})")
+        if patch["gpu_quota"] > 0:
+            total_slots = config_loader.get("scheduler", "total_gpu_slots", 4)
+            if patch["gpu_quota"] > total_slots:
+                raise HandlerError(400, f"gpu_quota cannot exceed system total_gpu_slots ({total_slots})")
 
     if "role" in patch and patch["role"] not in ("user", "admin"):
         raise HandlerError(400, "role must be 'user' or 'admin'")

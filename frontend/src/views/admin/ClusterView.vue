@@ -17,6 +17,7 @@
         :columns="columns"
         :data="workers"
         :pagination="false"
+        :scroll-x="1500"
         size="small"
         striped
         :row-key="(r) => r.node_id"

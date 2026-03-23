@@ -156,6 +156,7 @@ export default {
   'users.confirm.delete': '删除用户"{name}"？',
   'users.msg.updated': '已更新',
   'users.msg.deleted': '用户已删除',
+  'users.quota.unlimited': '不限制',
 
   // Admin - SystemView
   'system.stats': '系统统计',

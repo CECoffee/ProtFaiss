@@ -34,3 +34,8 @@ export async function reloadConfig() {
   const resp = await client.post('/admin/reload-config')
   return resp.data
 }
+
+export async function getGpuStatus() {
+  const resp = await client.get('/gpu/status')
+  return resp.data
+}

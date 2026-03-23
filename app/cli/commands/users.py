@@ -13,12 +13,14 @@ def cmd_users(args: list[str]) -> None:
     if not users:
         print("No users found."); return
 
-    print(f"\n  {'ID':<10} {'Username':<20} {'Role':<8} {'Quota':<6} {'Active'}")
-    print("  " + "-" * 60)
+    print(f"\n  {'ID':<10} {'Username':<20} {'Role':<8} {'Quota':<12} {'Active'}")
+    print("  " + "-" * 64)
     for u in users:
+        quota_val = u.get('gpu_quota', '')
+        quota_str = 'unlimited' if quota_val == 0 else str(quota_val)
         print(
             f"  {str(u['id'])[:8]:<10} {u['username']:<20} {u['role']:<8} "
-            f"{u.get('gpu_quota',''):<6} {u.get('is_active','')}"
+            f"{quota_str:<12} {u.get('is_active','')}"
         )
 
 
@@ -29,7 +31,8 @@ def cmd_user(args: list[str]) -> None:
     try:
         user = client.call("user.get", {"user_id": args[0]})
         for k, v in user.items():
-            print(f"  {k}: {v}")
+            suffix = ' (unlimited)' if k == 'gpu_quota' and v == 0 else ''
+            print(f"  {k}: {v}{suffix}")
     except IpcError as e:
         print(f"Error {e.code}: {e.message}")
 

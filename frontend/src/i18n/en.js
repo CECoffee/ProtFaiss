@@ -156,6 +156,7 @@ export default {
   'users.confirm.delete': 'Delete user "{name}"?',
   'users.msg.updated': 'Updated',
   'users.msg.deleted': 'User deleted',
+  'users.quota.unlimited': 'Unlimited',
 
   // Admin - SystemView
   'system.stats': 'System Statistics',
