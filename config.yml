@@ -111,6 +111,8 @@ cluster:
   heartbeat_interval: 5
   # Worker considered dead after this many seconds without a heartbeat
   heartbeat_timeout: 15
+  # Retries when control plane fails to reach a worker before deregistering it
+  retry_num: 5
 
 # GPU Worker node configuration (used when running app.worker)
 worker:

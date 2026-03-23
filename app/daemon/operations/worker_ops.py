@@ -48,8 +48,13 @@ async def worker_heartbeat(params: dict, context: dict) -> dict:
     running_tasks = params.get("running_tasks", 0)
 
     registry = get_registry()
+    worker = await registry.get_worker(node_id)
+    if worker is None:
+        # Worker is unknown — control plane may have restarted; signal re-registration
+        return {"ok": True, "registered": False}
+
     await registry.heartbeat(node_id, cached_datasets, running_tasks)
-    return {"ok": True}
+    return {"ok": True, "registered": True}
 
 
 @register("worker.task_done")
@@ -101,18 +106,46 @@ async def worker_deregister(params: dict, context: dict) -> dict:
     return {"ok": True}
 
 
+async def deregister_unreachable_worker(node_id: str) -> None:
+    """Deregister a worker that cannot be reached after all retries are exhausted."""
+    registry = get_registry()
+    await registry.deregister(node_id)
+    print(f"[worker_ops] Worker {node_id} deregistered due to unreachability")
+
+
 async def _connect_to_worker(node_id: str, address: str) -> None:
-    """Establish a persistent WorkerClient connection to a newly registered worker."""
+    """Establish a persistent WorkerClient connection to a newly registered worker.
+
+    Retries up to retry_num times (from config) with exponential backoff.
+    If all retries are exhausted the worker is automatically deregistered.
+    """
     from app.daemon.worker_client import WorkerClient
     from app.scheduler.worker_registry import get_registry
+    from app.core import config_loader
 
-    try:
-        host, port_str = address.rsplit(":", 1)
-        port = int(port_str)
-        client = WorkerClient(node_id, host, port)
-        await client.connect(timeout=15.0)
-        registry = get_registry()
-        await registry.set_client(node_id, client)
-        print(f"[worker_ops] WorkerClient connected to {node_id}")
-    except Exception as e:
-        print(f"[worker_ops] Failed to connect WorkerClient to {node_id}: {e}")
+    retry_num = config_loader.get("cluster", "retry_num", 3)
+    host, port_str = address.rsplit(":", 1)
+    port = int(port_str)
+
+    for attempt in range(retry_num + 1):
+        try:
+            client = WorkerClient(node_id, host, port)
+            await client.connect(timeout=15.0)
+            registry = get_registry()
+            await registry.set_client(node_id, client)
+            print(f"[worker_ops] WorkerClient connected to {node_id}")
+            return
+        except Exception as e:
+            if attempt < retry_num:
+                delay = min(2 ** attempt, 30)
+                print(
+                    f"[worker_ops] Failed to connect to {node_id} "
+                    f"(attempt {attempt + 1}/{retry_num + 1}): {e}, retrying in {delay}s..."
+                )
+                await asyncio.sleep(delay)
+            else:
+                print(
+                    f"[worker_ops] Exhausted {retry_num} retries for {node_id}: {e}. "
+                    "Deregistering worker."
+                )
+                await deregister_unreachable_worker(node_id)

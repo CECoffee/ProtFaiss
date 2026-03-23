@@ -604,6 +604,10 @@ class GpuScheduler:
             await loop.run_in_executor(None, _blocking_set_task_done, task_id, 0, "failed")
             pool.release(task_id)
             self._start_times.pop(task_id, None)
+            from app.daemon.worker_client import WorkerUnreachableError
+            if isinstance(e, WorkerUnreachableError):
+                from app.daemon.operations.worker_ops import deregister_unreachable_worker
+                asyncio.create_task(deregister_unreachable_worker(node_id))
 
     async def _cluster_dispatch_build(self, task: dict, node_id: str) -> None:
         from .worker_registry import get_registry
@@ -641,6 +645,10 @@ class GpuScheduler:
             await loop.run_in_executor(None, _blocking_set_task_done, task_id, 0, "failed")
             pool.release(task_id)
             self._start_times.pop(task_id, None)
+            from app.daemon.worker_client import WorkerUnreachableError
+            if isinstance(e, WorkerUnreachableError):
+                from app.daemon.operations.worker_ops import deregister_unreachable_worker
+                asyncio.create_task(deregister_unreachable_worker(node_id))
 
 
 # ---------------------------------------------------------------------------
