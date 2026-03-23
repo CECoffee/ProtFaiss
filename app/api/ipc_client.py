@@ -59,7 +59,9 @@ class IpcClient:
         self._port: int = 9002
 
     async def connect(self):
-        self._host = config_loader.get("daemon", "ipc_host", "127.0.0.1")
+        host = config_loader.get("daemon", "ipc_host", "127.0.0.1")
+        # 0.0.0.0 是监听地址，不能用作连接目标；同机连接使用 127.0.0.1
+        self._host = "127.0.0.1" if host == "0.0.0.0" else host
         self._port = config_loader.get("daemon", "ipc_port", 9002)
         for _ in range(_POOL_SIZE):
             conn = await self._new_connection()
