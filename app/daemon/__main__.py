@@ -28,7 +28,7 @@ Shutdown sequence:
 import asyncio
 import os
 
-from app.core.config import DATASETS_ROOT
+from app.core.config import DATASETS_ROOT, ESM2_MODEL_DIR
 from app.core import config_loader
 from app.daemon.lifecycle import write_pid, remove_pid, register_signal_handlers
 from app.daemon.server import start_server, stop_server
@@ -48,19 +48,22 @@ async def _run():
     cluster = _cluster_enabled()
     print(f"[daemon] Starting up... (mode: {'cluster' if cluster else 'legacy'})")
 
+    # Resolve storage paths: config.yml storage.* overrides hardcoded defaults
+    model_dir = config_loader.get("storage", "models_root", "") or ESM2_MODEL_DIR
+    datasets_root = config_loader.get("storage", "datasets_root", "") or DATASETS_ROOT
+
     if not cluster:
         # Legacy: init GPU + ESM2 on the daemon process itself
         from app.core import gpu as _gpu
         from app.core.encoder import init_model
-        from app.core.config import ESM2_MODEL_DIR
         _gpu.log_gpu_status()
-        init_model(ESM2_MODEL_DIR)
+        init_model(model_dir)
 
     init_db_pool()
     await init_redis()
     ensure_admin()
 
-    os.makedirs(DATASETS_ROOT, exist_ok=True)
+    os.makedirs(datasets_root, exist_ok=True)
 
     if cluster:
         from app.scheduler.cluster_pool import init_cluster_pool

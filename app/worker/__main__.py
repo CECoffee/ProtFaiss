@@ -43,7 +43,8 @@ async def _run():
     gpu_devices = _gpu.get_available_devices()
     gpu_slots = len(gpu_devices) if gpu_devices else 1
 
-    init_model(ESM2_MODEL_DIR)
+    model_dir = config_loader.get("storage", "models_root", "") or ESM2_MODEL_DIR
+    init_model(model_dir)
     init_db_pool()
     await init_redis()
 
