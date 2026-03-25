@@ -1,0 +1,27 @@
+# Control Plane Dockerfile
+# Runs the daemon (IPC server) and API server.
+# No GPU required — all GPU work is delegated to worker nodes.
+
+FROM continuumio/miniconda3:24.1.2-0
+
+WORKDIR /app
+
+# Install conda environment from freeze.yml
+COPY freeze.yml .
+RUN conda env create -f freeze.yml -n protfaiss && \
+    conda clean -afy
+
+# Install redis async client (not in freeze.yml)
+RUN conda run -n protfaiss pip install redis[hiredis]>=5.0 py7zr>=0.20
+
+# Copy application code
+COPY app/ ./app/
+COPY config.yml .
+
+# Use the conda environment
+ENV PATH=/opt/conda/envs/protfaiss/bin:$PATH
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 9812 8000
+
+CMD ["python", "-m", "app.daemon"]

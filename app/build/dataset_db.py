@@ -24,21 +24,20 @@ def _row_to_entry(row) -> Dict:
         "visibility": row[5],
         "error_msg": row[6],
         "fasta_path": row[7],
-        "index_dir": row[8],
-        "db_table": row[9],
-        "num_sequences": row[10],
-        "num_indexed": row[11],
-        "progress_step": row[12],
-        "progress_pct": row[13],
-        "progress_detail": row[14],
-        "created_at": row[15].isoformat() if row[15] else None,
-        "updated_at": row[16].isoformat() if row[16] else None,
+        "db_table": row[8],
+        "num_sequences": row[9],
+        "num_indexed": row[10],
+        "progress_step": row[11],
+        "progress_pct": row[12],
+        "progress_detail": row[13],
+        "created_at": row[14].isoformat() if row[14] else None,
+        "updated_at": row[15].isoformat() if row[15] else None,
     }
 
 
 _SELECT = (
     "SELECT id, owner_id, name, algorithm, status, visibility, error_msg, "
-    "fasta_path, index_dir, db_table, num_sequences, num_indexed, "
+    "fasta_path, db_table, num_sequences, num_indexed, "
     "progress_step, progress_pct, progress_detail, created_at, updated_at "
     "FROM datasets"
 )
@@ -55,15 +54,15 @@ def blocking_create_dataset(entry: Dict) -> Dict:
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO datasets "
-                "(id, owner_id, name, algorithm, status, visibility, fasta_path, index_dir, db_table) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "(id, owner_id, name, algorithm, status, visibility, fasta_path, db_table) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
                 "RETURNING id, owner_id, name, algorithm, status, visibility, error_msg, "
-                "fasta_path, index_dir, db_table, num_sequences, num_indexed, "
+                "fasta_path, db_table, num_sequences, num_indexed, "
                 "progress_step, progress_pct, progress_detail, created_at, updated_at",
                 (
                     entry["id"], entry["owner_id"], entry["name"], entry["algorithm"],
                     entry.get("status", "building"), entry.get("visibility", "private"),
-                    entry.get("fasta_path"), entry.get("index_dir"), entry.get("db_table"),
+                    entry.get("fasta_path"), entry.get("db_table"),
                 ),
             )
             row = cur.fetchone()
@@ -104,7 +103,7 @@ def blocking_update_dataset(dataset_id: str, patch: Dict) -> Optional[Dict]:
             cur.execute(
                 f"UPDATE datasets SET {set_clause}, updated_at = now() WHERE id = %s "
                 "RETURNING id, owner_id, name, algorithm, status, visibility, error_msg, "
-                "fasta_path, index_dir, db_table, num_sequences, num_indexed, "
+                "fasta_path, db_table, num_sequences, num_indexed, "
                 "progress_step, progress_pct, progress_detail, created_at, updated_at",
                 values,
             )
@@ -166,7 +165,7 @@ def blocking_get_user_active_dataset(user_id: str) -> Optional[Dict]:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT d.id, d.owner_id, d.name, d.algorithm, d.status, d.visibility, "
-                "d.error_msg, d.fasta_path, d.index_dir, d.db_table, d.num_sequences, "
+                "d.error_msg, d.fasta_path, d.db_table, d.num_sequences, "
                 "d.num_indexed, d.progress_step, d.progress_pct, d.progress_detail, "
                 "d.created_at, d.updated_at "
                 "FROM user_active_datasets uad "

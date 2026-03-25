@@ -12,6 +12,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import os
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from app.core.db import get_db_config
+
 def collate_fn(batch, tokenizer):
     return tokenizer(batch, return_tensors="pt", padding=True, max_length=2048, truncation=True)
 
@@ -56,14 +60,7 @@ def my_esm2_batch_encoder(data, batch_size=12, pooling='mean', num_workers=12):
     embeddings = np.concatenate(embeddings, axis=0)
     return embeddings
 
-# --- 2. 数据库配置 ---
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 5432,
-    "dbname": "protein_db",
-    "user": "postgres",
-    "password": "0909" # [!] 替换为您的密码
-}
+# --- 2. 数据库配置（从 config.yml 读取）---
 
 # --- 3. FAISS 索引参数 ---
 D = 1280                # 维度 (ESM2)
@@ -80,7 +77,7 @@ def build_index():
     print("索引初始化完毕。")
 
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
+        conn = psycopg2.connect(**get_db_config())
         print("数据库连接成功。")
     except psycopg2.Error as e:
         print(f"数据库连接失败: {e}", file=sys.stderr)

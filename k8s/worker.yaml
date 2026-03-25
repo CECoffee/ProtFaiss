@@ -1,0 +1,104 @@
+# ProtFaiss GPU Worker Deployment
+# Runs the worker node (ESM2 + FAISS + build pipeline).
+# Requires NVIDIA GPU. Deploy one replica per GPU node, or use a DaemonSet
+# on nodes with the "protfaiss/gpu-worker=true" label.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: protfaiss-worker
+  labels:
+    app: protfaiss-worker
+spec:
+  # Set replicas to match the number of GPU nodes
+  replicas: 2
+  selector:
+    matchLabels:
+      app: protfaiss-worker
+  template:
+    metadata:
+      labels:
+        app: protfaiss-worker
+    spec:
+      # Each worker pod should run on a different node
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: [protfaiss-worker]
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: worker
+          image: protfaiss-worker:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.worker"]
+          ports:
+            - containerPort: 9820
+              name: worker-ipc
+          env:
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yml
+              subPath: config.yml
+            - name: shared-datasets
+              mountPath: /shared/datasets
+            - name: shared-models
+              mountPath: /shared/models
+            - name: local-cache
+              mountPath: /local/cache/faiss
+          resources:
+            requests:
+              memory: "8Gi"
+              cpu: "4"
+              nvidia.com/gpu: "1"
+            limits:
+              memory: "32Gi"
+              cpu: "16"
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            tcpSocket:
+              port: 9820
+            initialDelaySeconds: 60   # ESM2 model load takes time
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 9820
+            initialDelaySeconds: 120
+            periodSeconds: 30
+      # Required for GPU access
+      runtimeClassName: nvidia
+      volumes:
+        - name: config
+          configMap:
+            name: protfaiss-config
+        - name: shared-datasets
+          persistentVolumeClaim:
+            claimName: protfaiss-datasets-pvc
+        - name: shared-models
+          persistentVolumeClaim:
+            claimName: protfaiss-models-pvc
+        - name: local-cache
+          emptyDir:
+            sizeLimit: 50Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: protfaiss-worker
+spec:
+  selector:
+    app: protfaiss-worker
+  ports:
+    - name: worker-ipc
+      port: 9820
+      targetPort: 9820
+  # ClusterIP is fine — control plane connects to worker pods directly
+  # using their pod IPs (registered in worker.register RPC)
+  type: ClusterIP

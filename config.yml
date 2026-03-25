@@ -2,7 +2,7 @@
 
 gpu:
   # 主开关：false = 单卡模式（GPU 0），适用于单卡机器或调试
-  multi_gpu_enabled: true
+  multi_gpu_enabled: false
   # ESM2 编码使用的设备："auto"（选显存最多的 GPU）| "cuda:0" | "cpu"
   encoding_device: "auto"
   # FAISS 使用的 GPU 列表："auto"（所有可用 GPU）| [0, 1, 2]
@@ -58,10 +58,10 @@ scheduler:
   max_cached_datasets: 4
 
 daemon:
-  # IPC TCP server address (127.0.0.1 only — local connections)
-  ipc_host: "127.0.0.1"
-  # IPC TCP port
-  ipc_port: 9812
+  # IPC TCP server address (127.0.0.1 for local dev; 0.0.0.0 in K8s/cluster)
+  ipc_host: "0.0.0.0"
+  # IPC TCP port (Windows 动态保留范围 9788-9887)
+  ipc_port: 9002
   # PID file directory
   pid_dir: "~/.protfaiss"
 
@@ -72,3 +72,52 @@ api:
   port: 8000
   # Number of persistent IPC connections to the daemon
   ipc_pool_size: 4
+
+# PostgreSQL database connection
+database:
+  host: "localhost"
+  port: 5432
+  dbname: "protein_db"
+  user: "postgres"
+  # 生产环境推荐通过 DB_PASSWORD 环境变量传入，避免明文写入配置文件
+  password: "0909"
+  max_connections: 20
+
+# Redis — shared task state store (required in cluster mode)
+redis:
+  host: "localhost"
+  port: 6379
+  db: 0
+  password: ""
+
+# Shared storage — must be NFS-mounted on all nodes in cluster mode
+storage:
+  # Overrides DATASETS_ROOT from core.config if set (leave empty for legacy path)
+  datasets_root: ""
+  # Overrides ESM2_MODEL_DIR from core.config if set (leave empty for legacy path)
+  models_root: ""
+
+# Distributed cluster configuration
+cluster:
+  # false = single-node legacy mode; true = multi-node worker dispatch mode
+  enabled: true
+  # Control plane IPC address that workers connect to for registration/heartbeats
+  # (same as daemon.ipc_host/ipc_port — listed here for clarity)
+  control_plane_host: "127.0.0.1"
+  control_plane_port: 9002
+  # Task result TTL in Redis (seconds)
+  task_ttl: 600
+  # Worker heartbeat interval (seconds)
+  heartbeat_interval: 5
+  # Worker considered dead after this many seconds without a heartbeat
+  heartbeat_timeout: 15
+  # Retries when control plane fails to reach a worker before deregistering it
+  retry_num: 5
+
+# GPU Worker node configuration (used when running app.worker)
+worker:
+  # Address this worker listens on for task dispatch from the control plane
+  host: "0.0.0.0"
+  port: 9100
+  # Human-readable node identifier (defaults to hostname if empty)
+  node_id: "win"

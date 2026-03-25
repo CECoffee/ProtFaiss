@@ -17,11 +17,11 @@ def main():
     args = parser.parse_args()
 
     host = args.host or config_loader.get("daemon", "ipc_host", "127.0.0.1")
-    port = args.port or config_loader.get("daemon", "ipc_port", 9812)
+    port = args.port or config_loader.get("daemon", "ipc_port", 9002)
 
     print("\033[1;36m╭─────────────────────────────────────╮\033[0m")
     print("\033[1;36m│\033[0m  \033[1mProtFaiss Interactive Console\033[0m      \033[1;36m│\033[0m")
-    print(f"\033[1;36m│\033[0m  Connecting to {host}:{port}…\033[1;36m\033[0m      \033[1;36m│\033[0m")
+    print(f"\033[1;36m│\033[0m  Connecting to {host}:{port}…\033[1;36m\033[0m        \033[1;36m│\033[0m")
     print("\033[1;36m╰─────────────────────────────────────╯\033[0m")
     try:
         client = init_client(host, port)

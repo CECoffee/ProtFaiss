@@ -44,12 +44,13 @@
           </n-space>
 
           <n-alert v-if="noDatasetError" type="warning" :title="t('search.noDataset')" />
+          <n-alert v-if="!gpuStore.gpuAvailable" type="error" :title="t('search.noGpu')" />
 
           <n-space>
             <n-button
               type="primary"
               :loading="status === 'pending'"
-              :disabled="!sequence.trim() || status === 'pending'"
+              :disabled="!sequence.trim() || status === 'pending' || !gpuStore.gpuAvailable"
               @click="handleSubmit"
             >
               {{ t('search.btnSearch') }}
@@ -88,9 +89,11 @@ import { NTag, NText, NEllipsis } from 'naive-ui'
 import { submitSearch, getResult } from '../api/proteinSearch'
 import { listDatasets, switchDataset } from '../api/buildApi'
 import { useI18n } from '../i18n/index.js'
+import { useGpuStore } from '../stores/gpu'
 import SearchProgress from '../components/SearchProgress.vue'
 
 const { t } = useI18n()
+const gpuStore = useGpuStore()
 
 const sequence = ref('')
 const topK = ref(5)
@@ -220,5 +223,8 @@ function handleCancel() {
   errorMsg.value = null
 }
 
-onMounted(loadDatasets)
+onMounted(() => {
+  loadDatasets()
+  gpuStore.fetchQueue()
+})
 </script>

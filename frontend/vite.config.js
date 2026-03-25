@@ -11,7 +11,17 @@ export default defineConfig({
       '/health': { target: 'http://localhost:8000', changeOrigin: true },
       '/build': { target: 'http://localhost:8000', changeOrigin: true },
       '/datasets': { target: 'http://localhost:8000', changeOrigin: true },
-      '/admin': { target: 'http://localhost:8000', changeOrigin: true },
+      '/admin': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        bypass(req) {
+          // Browser navigation requests (Accept: text/html) are SPA routes —
+          // let Vite serve index.html instead of forwarding to the backend.
+          if (req.headers.accept?.includes('text/html')) {
+            return req.url
+          }
+        },
+      },
       '/gpu': { target: 'http://localhost:8000', changeOrigin: true },
     },
   },

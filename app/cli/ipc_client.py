@@ -24,8 +24,10 @@ class IpcError(Exception):
 
 class CliIpcClient:
     def __init__(self, host: str = None, port: int = None):
-        self._host = host or config_loader.get("daemon", "ipc_host", "127.0.0.1")
-        self._port = port or config_loader.get("daemon", "ipc_port", 9812)
+        raw_host = host or config_loader.get("daemon", "ipc_host", "127.0.0.1")
+        # 0.0.0.0 是监听地址，不能用作连接目标；同机连接使用 127.0.0.1
+        self._host = "127.0.0.1" if raw_host == "0.0.0.0" else raw_host
+        self._port = port or config_loader.get("daemon", "ipc_port", 9002)
         self._sock: socket.socket | None = None
         self._admin_context: dict = {"source": "cli", "role": "admin", "user_id": None}
 

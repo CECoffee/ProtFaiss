@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.core.config import DB_CONFIG
+from app.core.db import get_db_config
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -104,8 +104,9 @@ INSERT INTO {table} (
 
 
 def main():
-    print(f"Connecting to database {DB_CONFIG['dbname']} ...")
-    conn = psycopg2.connect(**DB_CONFIG)
+    _db = get_db_config()
+    print(f"Connecting to database {_db['dbname']} ...")
+    conn = psycopg2.connect(**_db)
     cursor = conn.cursor()
     print("Connected.")
 

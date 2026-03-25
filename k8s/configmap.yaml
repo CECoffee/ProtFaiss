@@ -1,0 +1,92 @@
+# ProtFaiss ConfigMap — config.yml for cluster deployment
+# Edit values below, especially:
+#   cluster.control_plane_host — set to the Service ClusterIP or DNS name
+#   redis.host — set to the Redis Service name
+#   storage.datasets_root / models_root — must match NFS mount paths
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: protfaiss-config
+data:
+  config.yml: |
+    gpu:
+      multi_gpu_enabled: false         # Single GPU per worker pod
+      encoding_device: "auto"
+      faiss_devices: "auto"
+      faiss_temp_memory_mb: 1500
+      memory_reserve_mb: 500
+      fp16_lut: true
+
+    search:
+      faiss_search_workers: 8
+      max_concurrent_encodings: 1      # One GPU per worker
+      threadpool_workers: 16
+      faiss_nprobe: 8
+      time_release_vram: 30
+
+    build:
+      encoding_batch_size: 32
+      max_per_shard: 500000
+      db_batch_size: 500
+      ivfpq_nlist: 256
+      ivfpq_m: 48
+      ivfpq_nbits: 8
+      hnsw_m: 32
+      hnsw_ef_construction: 200
+      add_batch_size: 200000
+
+    scheduler:
+      total_gpu_slots: 1               # Not used in cluster mode
+      default_user_gpu_quota: 1
+      poll_interval: 0.5
+      search_gpu_timeout: 60
+      build_gpu_timeout: 86400
+      decay_factor: 0.95
+      search_base_priority: 10
+      build_base_priority: 100
+      max_cached_datasets: 2           # Per worker
+
+    daemon:
+      ipc_host: "0.0.0.0"             # Accept connections from workers + API
+      ipc_port: 9812
+      pid_dir: "/tmp/.protfaiss"
+
+    api:
+      host: "0.0.0.0"
+      port: 8000
+      ipc_pool_size: 4
+
+    redis:
+      host: "redis"                    # Kubernetes Service DNS name
+      port: 6379
+      db: 0
+      password: ""
+
+    storage:
+      datasets_root: "/shared/datasets"
+      models_root: "/shared/models"
+
+    cluster:
+      enabled: true
+      control_plane_host: "protfaiss-control-plane"   # Kubernetes Service DNS
+      control_plane_port: 9812
+      task_ttl: 600
+      heartbeat_interval: 5
+      heartbeat_timeout: 15
+
+    worker:
+      host: "0.0.0.0"
+      port: 9820
+      node_id: ""                      # Auto-set to pod node name via env
+---
+# Secrets template (fill in before deploying)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: protfaiss-secrets
+type: Opaque
+stringData:
+  admin-username: "admin"
+  admin-password: "changeme"          # Change before deploying!
+  secret-key: "changeme-jwt-secret"  # Change before deploying!

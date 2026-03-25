@@ -4,9 +4,29 @@
 
 ---
 
-## 架构
+## 目录
 
-三进程设计，通过 TCP IPC 通信：
+- [系统架构](#系统架构)
+  - [单节点模式（传统）](#单节点模式传统)
+  - [集群模式（分布式）](#集群模式分布式)
+- [搜索与构建流程](#搜索与构建流程)
+- [部署](#部署)
+  - [单节点快速开始](#单节点快速开始)
+  - [集群模式（多机多卡）](#集群模式多机多卡-1)
+  - [Kubernetes 部署](#kubernetes-部署)
+- [目录结构](#目录结构)
+- [配置参考](#配置参考)
+- [工具与测试](#工具与测试)
+- [技术栈](#技术栈)
+- [环境变量](#环境变量)
+
+---
+
+## 系统架构
+
+### 单节点模式（传统）
+
+`config.yml` 中 `cluster.enabled: false`（默认）。所有 GPU 计算（ESM2 编码、FAISS 搜索、索引构建）在 Daemon 进程本地执行。
 
 ```
 ┌─────────────┐     IPC (TCP 9812)      ┌──────────────────────────────┐
@@ -21,43 +41,126 @@
 └─────────────┘
 ```
 
-- **Daemon** — 长驻进程，独占 ESM2 模型、FAISS 分片缓存、PostgreSQL 连接池、GPU 调度器
-- **API** — 轻量 FastAPI 层，本地验证 JWT 后通过 IPC 转发所有业务逻辑
-- **CLI** — `psql` 风格交互式 REPL，以隐式 admin 身份直连 Daemon（无需 JWT）
+### 集群模式（分布式）
+
+`config.yml` 中 `cluster.enabled: true`。Daemon 演变为**控制平面**，GPU 计算全部分发到远程 **Worker 节点**。适用于多机多卡算力集群（K8s/裸机）。
+
+```
+[前端 Vue3]
+    │ HTTP :8000
+[API Gateway — FastAPI，无状态]
+    │ IPC (TCP 9812)
+[控制平面 — app/daemon]
+    │  RPC dispatch · RBAC · 调度器 · Worker 注册表 · Redis · PostgreSQL
+    │
+    │ ① Worker 注册/心跳/task_done  (Worker → CP, 9812)
+    │ ② 任务分发                    (CP → Worker, 9820)
+    │
+    ├────────────────────────────────────┐
+[Worker 节点 A :9820]          [Worker 节点 B :9820]
+ ESM2 + FAISS + Build           ESM2 + FAISS + Build
+ GPU 0,1                        GPU 0
+ 本地 VRAM LRU 缓存              本地 VRAM LRU 缓存
+
+[共享存储 — NFS]
+  /shared/datasets/   (FASTA、FAISS 索引、build_config.json)
+  /shared/models/     (ESM2 模型权重，只读)
+
+[Redis]
+  任务状态存储（task:{id} → JSON，10 min TTL）
+```
+
+#### 通信协议
+
+两条独立 TCP 通道，均使用相同的 **4 字节大端长度前缀 + UTF-8 JSON** 协议：
+
+| 方向 | 端口 | 用途 |
+|------|------|------|
+| Worker → 控制平面 | 9812 | `worker.register` / `worker.heartbeat` / `worker.task_done` |
+| 控制平面 → Worker | 9820 | `worker.search` / `worker.build` / `worker.unload` |
+
+#### Dataset 亲和路由
+
+调度器选择 Worker 时优先路由到**已将目标数据集加载进 VRAM** 的节点，避免冷启动延迟。心跳携带 `cached_datasets` 列表，控制平面实时维护亲和映射。
 
 ---
 
-## 快速开始
+## 搜索与构建流程
 
-### 环境要求
+### 搜索请求（集群模式）
 
-- Conda（用于 Python 环境）
-- Node.js + npm（用于前端）
-- PostgreSQL（`localhost:5432`，数据库 `protein_db`）
-- CUDA 13.0 兼容 GPU（推荐）
+```
+1. 客户端 POST /query/submit (JWT)
+2. API → 控制平面: search.submit RPC
+3. 控制平面:
+   a. 解析用户激活数据集
+   b. 将任务参数写入 Redis (task:{id})
+   c. 插入 gpu_tasks 记录 (status=pending)
+4. 调度器（异步循环，500ms 间隔）:
+   a. 亲和路由 → 选择最优 Worker
+   b. 分配 ClusterGpuPool slot
+   c. 发送 worker.search RPC 到 Worker
+5. Worker:
+   a. 按需加载 FAISS 分片到 GPU（LRU 缓存）
+   b. ESM2 编码序列 → 1280 维向量
+   c. 并行搜索 FAISS 分片
+   d. 查询 PostgreSQL 元数据
+   e. 结果写回 Redis
+   f. 发送 worker.task_done → 控制平面释放 slot
+6. 客户端轮询 GET /query/result/{task_id}
+   → 控制平面从 Redis 读取返回
+```
 
-### 安装
+### 索引构建（集群模式）
+
+```
+1. 客户端上传 FASTA → API 保存到共享存储临时路径
+2. 控制平面 build.submit:
+   a. 创建 dataset 记录 (status=building)
+   b. 写 build_config.json 到 NFS
+   c. 插入 gpu_tasks (type=build)
+3. 调度器选择 Worker，发送 worker.build RPC
+4. Worker 执行完整构建流水线:
+   导入 DB → ESM2 编码 → 构建 FAISS 索引 → 写入 NFS
+   每步通过 DB 更新进度
+5. 构建完成 → datasets.status = 'ready'
+6. 客户端轮询 /build/status/{id} 跟踪进度
+```
+
+---
+
+## 部署
+
+### 单节点快速开始
+
+#### 环境要求
+
+- Conda（Python 环境）
+- Node.js + npm（前端）
+- PostgreSQL（例：`localhost:5432`，库 `protein_db`）
+- CUDA 环境
+
+#### 安装
 
 ```bash
-# 创建 Python 环境
+# Python 环境
 conda env create -f freeze.yml
 conda activate protfaiss
 
-# 安装前端依赖
+# 前端依赖
 cd frontend && npm install
 ```
 
-### 数据库初始化
+#### 数据库初始化
 
 ```bash
-# 执行 SQL schema
 psql -U postgres -d protein_db -f app/migrations/001_auth_tables.sql
 ```
 
-### 启动
+#### 启动
 
 ```bash
-# 一键启动所有进程（daemon + API + 前端）
+# 一键启动（daemon + API + 前端）
 bash scripts/dev.sh
 ```
 
@@ -65,24 +168,142 @@ bash scripts/dev.sh
 
 ```bash
 python -m app.daemon          # Daemon（先启动）
-python -m app.api             # API（需要 Daemon 运行）
-python -m app.cli             # 交互式 CLI（需要 Daemon 运行）
-cd frontend && npm run dev    # 前端开发服务器 http://localhost:5173
+python -m app.api             # API
+python -m app.cli             # 交互式 CLI（implicit admin）
+cd frontend && npm run dev    # 前端 http://localhost:5173
 ```
 
-首次启动时，Daemon 会自动创建 admin 用户。若未设置 `ADMIN_PASSWORD` 环境变量，密码将打印到控制台。
+首次启动时 Daemon 自动创建 admin 用户。若未设置 `ADMIN_PASSWORD`，密码将打印到控制台。
 
 ---
 
-## 搜索流程
+### 集群模式（多机多卡）
 
-1. 客户端 POST 序列到 `/query/submit`（需 JWT）→ 获得 `task_id`
-2. API 将 `search.submit` RPC 转发给 Daemon
-3. `GpuScheduler` 入队，按用户 `decayed_gpu_seconds` 计算公平优先级
-4. Worker 调用 `core/encoder.py` → ESM2 前向传播 → 1280 维向量
-5. `search/retriever.py` 并行搜索 FAISS 分片 → top-k 候选
-6. `search/db_queries.py` 从 PostgreSQL 获取蛋白质元数据
-7. 客户端轮询 `GET /query/result/{task_id}` 直到 `status == "done"`
+#### 前提条件
+
+- 所有节点挂载同一 NFS 目录（`/shared/datasets`、`/shared/models`）
+- Redis 实例（所有节点可达）
+- PostgreSQL 实例（所有节点可达）
+- ESM2 模型权重已放置到 `/shared/models/`
+
+#### 安装（所有节点）
+
+```bash
+conda env create -f freeze.yml
+conda activate protfaiss
+```
+
+#### 数据库迁移
+
+```bash
+# 任一节点执行（仅一次）
+psql -U postgres -d protein_db -f app/migrations/001_auth_tables.sql
+psql -U postgres -d protein_db -f app/migrations/002_cluster_tables.sql
+```
+
+#### config.yml 关键配置
+
+```yaml
+cluster:
+  enabled: true
+  control_plane_host: "<控制平面节点 IP>"   # Worker 连接此地址注册
+  control_plane_port: 9812
+
+redis:
+  host: "<Redis IP>"
+  port: 6379
+
+storage:
+  datasets_root: "/shared/datasets"
+  models_root: "/shared/models"
+
+daemon:
+  ipc_host: "0.0.0.0"   # 控制平面需要接受来自 Worker 的连接
+
+worker:
+  host: "0.0.0.0"
+  port: 9820
+  node_id: ""            # 留空自动使用 hostname
+```
+
+#### 启动顺序
+
+```bash
+# 步骤 1：控制平面节点（无需 GPU）
+python -m app.daemon &    # 控制平面 IPC :9812
+python -m app.api &       # HTTP API :8000
+
+# 步骤 2：各 GPU Worker 节点（分别在每台机器上执行）
+# 确保 config.yml 中 cluster.control_plane_host 指向控制平面 IP
+python -m app.worker
+
+# 步骤 3：前端（可选）
+cd frontend && npm run build   # 生产构建
+# 或
+cd frontend && npm run dev     # 开发服务器 :5173
+```
+
+Worker 启动后会自动向控制平面注册，控制平面随即建立反向连接用于任务分发。
+
+#### 验证
+
+```bash
+# CLI 连接控制平面查看集群状态
+python -m app.cli
+> system health          # 系统健康状态
+> gpu queue             # 当前任务队列
+```
+
+---
+
+### Kubernetes 部署
+
+`k8s/` 目录包含完整部署清单：
+
+```
+k8s/
+  nfs-pv.yaml          — NFS PersistentVolume + PVC（datasets + models）
+  redis.yaml           — Redis StatefulSet + Service
+  configmap.yaml       — config.yml ConfigMap + Secrets 模板
+  control-plane.yaml   — Daemon + API Deployment + Service
+  worker.yaml          — GPU Worker Deployment（含反亲和确保跨节点）
+```
+
+#### 部署步骤
+
+```bash
+# 1. 修改 NFS 服务器地址
+vim k8s/nfs-pv.yaml    # 替换 nfs.server: "192.168.1.100"
+
+# 2. 修改 Secrets（admin 密码、JWT 密钥）
+vim k8s/configmap.yaml
+
+# 3. 构建并推送镜像
+docker build -f docker/Dockerfile.control-plane -t protfaiss-control-plane:latest .
+docker build -f docker/Dockerfile.worker -t protfaiss-worker:latest .
+# docker push ... （推送到你的 registry）
+
+# 4. 按顺序部署
+kubectl apply -f k8s/nfs-pv.yaml
+kubectl apply -f k8s/redis.yaml
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/control-plane.yaml
+kubectl apply -f k8s/worker.yaml
+
+# 5. 验证
+kubectl get pods
+kubectl logs -f deployment/protfaiss-control-plane -c daemon
+kubectl logs -f deployment/protfaiss-worker
+```
+
+#### 扩缩容
+
+```bash
+# 增加 Worker 节点数（每个 Pod 独占一张 GPU，反亲和确保跨节点分布）
+kubectl scale deployment protfaiss-worker --replicas=4
+
+# 控制平面保持单副本（状态由 PostgreSQL + Redis 承载）
+```
 
 ---
 
@@ -90,30 +311,68 @@ cd frontend && npm run dev    # 前端开发服务器 http://localhost:5173
 
 ```
 app/
-  daemon/          — 长驻 IPC 服务进程
-    operations/    — auth / build / config / dataset / gpu / search / user
-  api/             — FastAPI HTTP 层
-    routes/        — auth, build, datasets, gpu, health, search, users
-  cli/             — 交互式 REPL
-    commands/      — build, config, datasets, gpu, search, system, users
-  core/            — 共享：config, DB pool, ESM2 encoder, GPU utils
-  auth/            — 共享：JWT, 密码哈希, 用户 DB 操作
-  search/          — 共享：FAISS retriever, 任务存储, VRAM 计时器
-  build/           — 共享：索引构建器, dataset DB, worker 子进程
-  scheduler/       — 共享：GPU pool, 公平调度器
-  migrations/      — SQL schema + 迁移脚本
+  daemon/                — 控制平面 IPC 服务进程
+    operations/          — auth / build / config / dataset / gpu / search / user / worker
+    worker_client.py     — 控制平面→Worker 的 TCP 客户端
+  api/                   — FastAPI HTTP 层
+    routes/              — auth, build, datasets, gpu, health, search, users, export_import
+  cli/                   — 交互式 REPL（implicit admin）
+    commands/            — build, config, datasets, gpu, search, system, users, export_import
+  worker/                — GPU Worker 节点（集群模式）
+    __main__.py          — Worker 入口：init ESM2 + 注册 + 心跳
+    service.py           — 任务执行（search/build/unload）
+    heartbeat.py         — 定期心跳发送
+    vram_manager.py      — 本地 VRAM 释放计时器
+  core/                  — 共享：config, DB pool, ESM2 encoder, GPU utils, Redis client
+  auth/                  — 共享：JWT, 密码哈希, 用户 DB 操作
+  search/                — 共享：FAISS retriever, 任务存储（Redis）, VRAM 计时器
+  build/                 — 共享：索引构建器, dataset DB, export/import
+  scheduler/             — 共享：GPU pool, 公平调度器, Worker 注册表, 亲和路由
+    scheduler.py         — 双模调度：legacy（本地）+ cluster（远程分发）
+    worker_registry.py   — Worker 注册表 + 心跳存活检测
+    cluster_pool.py      — 集群 GPU slot 追踪（ClusterGpuPool）
+    affinity.py          — Dataset 亲和路由
+    fair_share.py        — 公平份额调度
+    gpu_pool.py          — 单节点 GPU pool（legacy 模式）
+  migrations/
+    001_auth_tables.sql  — 基础表：users, datasets, gpu_tasks 等
+    002_cluster_tables.sql — 集群表：cluster_workers, worker_dataset_cache
 
 frontend/src/
-  views/           — SearchView, BuilderView, DatasetsView, GpuDashboard, admin/
-  stores/          — Pinia stores (auth, gpu, theme)
-  api/             — Axios 客户端 + API 模块
-  composables/     — usePolling, useBuildPolling, useDatasets
-  i18n/            — 中英文国际化
+  views/                 — SearchView, BuilderView, DatasetsView, GpuDashboard, admin/
+  stores/                — Pinia stores (auth, gpu, theme)
+  api/                   — Axios 客户端 + API 模块
+  composables/           — usePolling, useBuildPolling, useDatasets
+  i18n/                  — 中英文国际化
 
-tools/             — 独立工具脚本
-tests/             — 压力测试、配置测试
-scripts/           — 开发启动脚本
+docker/
+  Dockerfile.control-plane  — 控制平面镜像（无 GPU 依赖）
+  Dockerfile.worker         — Worker 镜像（含 CUDA + FAISS-GPU）
+
+k8s/                     — Kubernetes 部署清单
+tools/                   — 独立工具脚本
+tests/                   — 压力测试
+scripts/                 — 开发启动脚本
 ```
+
+---
+
+## 配置参考
+
+`config.yml` 支持运行时热重载（`POST /admin/reload-config`）。
+
+| 节 | 说明 |
+|---|---|
+| `gpu` | 多 GPU 开关、编码设备、FAISS 设备、VRAM 限制、FP16 LUT |
+| `search` | FAISS workers、并发编码数、线程池、nprobe、VRAM 闲时释放 |
+| `build` | 编码批大小、IVF-PQ / HNSW 参数 |
+| `scheduler` | GPU 槽位、用户配额、轮询间隔、超时、衰减因子、优先级、最大缓存数 |
+| `daemon` | IPC host/port（集群模式需设为 `0.0.0.0`） |
+| `api` | HTTP host/port、IPC 连接池大小 |
+| `redis` | host / port / db / password |
+| `storage` | `datasets_root`、`models_root`（集群模式指向 NFS 路径） |
+| `cluster` | `enabled`、控制平面地址、心跳间隔/超时、task TTL |
+| `worker` | Worker 监听地址、port、node_id |
 
 ---
 
@@ -135,33 +394,21 @@ python -m app.migrations.migrate_registry
 
 ---
 
-## 配置
-
-运行时配置文件 `config.yml`，支持热重载（`POST /admin/reload-config`）。
-
-| 节 | 说明 |
-|---|---|
-| `gpu` | 多 GPU、编码设备、FAISS 设备、VRAM 限制、FP16 LUT |
-| `search` | FAISS workers、并发编码数、线程池大小、nprobe |
-| `build` | 编码批大小、IVF-PQ/HNSW 参数 |
-| `scheduler` | GPU 槽位、配额、轮询间隔、超时、衰减因子、优先级 |
-| `daemon` | IPC host/port（默认 `127.0.0.1:9812`） |
-| `api` | HTTP host/port（默认 `:8000`）、IPC 连接池大小 |
-
----
-
 ## 技术栈
 
 **后端**
 - Python 3.x，PyTorch 2.9.0+cu130，FAISS-GPU 1.9.0
-- Transformers 4.57.1（ESM2），FastAPI 0.121.1，Uvicorn
+- Transformers 4.57.1（ESM2），FastAPI 0.115.0，Uvicorn
 - psycopg2，python-jose（JWT），bcrypt，prompt-toolkit
+- redis，py7zr
 
 **前端**
 - Vue 3，Vite 5，Naive UI，Pinia，Axios
 
-**数据库**
-- PostgreSQL（`protein_db`）
+**存储**
+- PostgreSQL（`protein_db`）— 元数据、用户、任务队列
+- Redis — 任务状态（集群模式）
+- NFS / 本地文件系统 — FASTA、FAISS 索引、模型权重
 
 ---
 

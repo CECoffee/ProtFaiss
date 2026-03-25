@@ -47,6 +47,25 @@ _DEFAULTS: dict = {
         "hnsw_ef_construction": 200,
         "add_batch_size": 200000,
     },
+    "database": {
+        "host": "localhost",
+        "port": 5432,
+        "dbname": "protein_db",
+        "user": "postgres",
+        "password": "",
+        "max_connections": 20,
+    },
+    "scheduler": {
+        "total_gpu_slots": 1,
+        "default_user_gpu_quota": 1,
+        "poll_interval": 0.5,
+        "search_gpu_timeout": 60,
+        "build_gpu_timeout": 86400,
+        "decay_factor": 0.95,
+        "search_base_priority": 10,
+        "build_base_priority": 100,
+        "max_cached_datasets": 4,
+    },
 }
 
 

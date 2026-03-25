@@ -87,7 +87,7 @@ def blocking_fasta_from_db(
 
 def blocking_export_dataset(
     fasta_path: str,
-    index_dir: str,
+    dataset_id: str,
     manifest_data: Dict,
     output_path: str,
     progress_cb: Optional[Callable[[str, float], None]] = None,
@@ -100,6 +100,12 @@ def blocking_export_dataset(
     Returns output_path on success.
     """
     import py7zr
+    from app.core import config_loader
+    from app.core.config import DATASETS_ROOT as _DATASETS_ROOT_DEFAULT
+    index_dir = os.path.join(
+        config_loader.get("storage", "datasets_root", "") or _DATASETS_ROOT_DEFAULT,
+        dataset_id, "indices",
+    )
 
     # Collect index files (sorted for reproducibility)
     index_files: List[str] = []

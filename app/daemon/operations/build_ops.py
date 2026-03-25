@@ -1,7 +1,12 @@
 """
 Build operations: submit a build job and query its status.
-The API layer saves the uploaded file to a temp path and passes it here.
-The daemon moves it into datasets/{id}/ and spawns the worker subprocess.
+
+In legacy mode (cluster.enabled=false):
+  Spawns a local subprocess (app.build.worker) directly.
+
+In cluster mode (cluster.enabled=true):
+  Writes build_config.json to shared storage (NFS), then enqueues a
+  gpu_task. The cluster scheduler dispatches it to a remote worker node.
 """
 import asyncio
 import json
@@ -19,15 +24,22 @@ from app.build.config import (
     get_ivfpq_nlist, get_ivfpq_m, get_ivfpq_nbits,
     get_hnsw_m, get_hnsw_ef_construction,
 )
-from app.core.config import DATASETS_ROOT
+from app.core.config import DATASETS_ROOT as _DATASETS_ROOT_DEFAULT
 from app.core import config_loader
+
+
+def _get_datasets_root() -> str:
+    return config_loader.get("storage", "datasets_root", "") or _DATASETS_ROOT_DEFAULT
 
 _PROJECT_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 
-# Daemon-owned build process registry (replaces the one in build/routes.py)
 _ACTIVE_BUILD_PROCESSES: Dict[str, subprocess.Popen] = {}
+
+
+def _cluster_enabled() -> bool:
+    return config_loader.get("cluster", "enabled", False)
 
 
 def _reap_finished_processes() -> None:
@@ -37,7 +49,6 @@ def _reap_finished_processes() -> None:
 
 
 def terminate_all_build_processes() -> None:
-    """Called during daemon shutdown."""
     for dataset_id, proc in list(_ACTIVE_BUILD_PROCESSES.items()):
         if proc.poll() is None:
             proc.terminate()
@@ -54,6 +65,11 @@ async def build_submit(params: dict, context: dict) -> dict:
     if algorithm not in ("flat", "ivfpq", "hnsw"):
         raise HandlerError(400, "algorithm must be flat, ivfpq, or hnsw")
 
+    if _cluster_enabled():
+        from app.scheduler.cluster_pool import get_cluster_pool
+        if get_cluster_pool().total_slots == 0:
+            raise HandlerError(503, "No GPU workers online. Build is unavailable.")
+
     user_id = context["user_id"]
     name = params.get("name", "untitled")
 
@@ -67,11 +83,12 @@ async def build_submit(params: dict, context: dict) -> dict:
     hnsw_m = params.get("hnsw_m") or get_hnsw_m()
     ef_construction = params.get("ef_construction") or get_hnsw_ef_construction()
 
-    _reap_finished_processes()
+    if not _cluster_enabled():
+        _reap_finished_processes()
 
     dataset_id = str(uuid.uuid4())
     short_id = dataset_id[:8]
-    dataset_dir = os.path.join(DATASETS_ROOT, dataset_id)
+    dataset_dir = os.path.join(_get_datasets_root(), dataset_id)
     index_dir = os.path.join(dataset_dir, "indices")
     fasta_path = os.path.join(dataset_dir, "input.fasta")
     db_table = f"proteins_{short_id}"
@@ -88,17 +105,15 @@ async def build_submit(params: dict, context: dict) -> dict:
         "status": "building",
         "visibility": "private",
         "fasta_path": fasta_path,
-        "index_dir": index_dir,
         "db_table": db_table,
     }
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(BLOCKING_EXECUTOR, blocking_create_dataset, entry)
 
-    config = {
+    build_config = {
         "dataset_id": dataset_id,
         "fasta_path": fasta_path,
         "db_table": db_table,
-        "index_dir": index_dir,
         "algorithm": algorithm,
         "nlist": nlist,
         "pq_m": pq_m,
@@ -110,13 +125,19 @@ async def build_submit(params: dict, context: dict) -> dict:
     }
     config_path = os.path.join(dataset_dir, "build_config.json")
     with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(config, f)
+        json.dump(build_config, f)
 
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "app.build.worker", "--config", config_path],
-        cwd=_PROJECT_ROOT,
-    )
-    _ACTIVE_BUILD_PROCESSES[dataset_id] = proc
+    if _cluster_enabled():
+        # Cluster mode: enqueue gpu_task; scheduler dispatches to a remote worker
+        from app.scheduler.scheduler import blocking_enqueue_build
+        await loop.run_in_executor(BLOCKING_EXECUTOR, blocking_enqueue_build, dataset_id, user_id)
+    else:
+        # Legacy mode: spawn local subprocess
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "app.build.worker", "--config", config_path],
+            cwd=_PROJECT_ROOT,
+        )
+        _ACTIVE_BUILD_PROCESSES[dataset_id] = proc
 
     return {"dataset_id": dataset_id, "status": "building"}
 

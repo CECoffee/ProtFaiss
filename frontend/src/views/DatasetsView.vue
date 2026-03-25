@@ -94,14 +94,17 @@
 
 <script setup>
 import { ref, computed, h, onMounted, onUnmounted } from 'vue'
-import { NTag, NButton, NSpace, NSwitch, NPopconfirm, NProgress } from 'naive-ui'import {
+import { NTag, NButton, NSpace, NSwitch, NPopconfirm, NProgress } from 'naive-ui'
+import {
   listDatasets, switchDataset, deleteDataset, setDatasetVisibility,
   exportDataset, getExportStatus, downloadExport,
   importDataset, getImportStatus,
 } from '../api/buildApi'
 import { useI18n } from '../i18n/index.js'
+import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
+const auth = useAuthStore()
 
 const datasets = ref([])
 const activeDatasetId = ref(null)
@@ -171,13 +174,19 @@ const columns = computed(() => [
     title: t('datasets.col.visibility'),
     key: 'visibility',
     width: 110,
-    render: (row) => h(NSwitch, {
-      value: row.visibility === 'public',
-      size: 'small',
-      checkedChildren: t('datasets.vis.public'),
-      uncheckedChildren: t('datasets.vis.private'),
-      onUpdateValue: (val) => handleVisibility(row, val ? 'public' : 'private'),
-    }),
+    render: (row) => {
+      const canToggle = row.owner_id === auth.user?.id || auth.isAdmin
+      return h(NSwitch, {
+        value: row.visibility === 'public',
+        size: 'small',
+        disabled: !canToggle,
+        checkedChildren: t('datasets.vis.public'),
+        uncheckedChildren: t('datasets.vis.private'),
+        onUpdateValue: canToggle
+          ? (val) => handleVisibility(row, val ? 'public' : 'private')
+          : undefined,
+      })
+    },
   },
   {
     title: t('datasets.col.created'),

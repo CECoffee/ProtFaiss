@@ -80,7 +80,7 @@ import { NIcon } from 'naive-ui'
 import {
   SearchOutline, HammerOutline, FolderOutline,
   HardwareChipOutline, PeopleOutline, SettingsOutline, LogOutOutline,
-  SunnyOutline, MoonOutline, DesktopOutline,
+  SunnyOutline, MoonOutline, DesktopOutline, ServerOutline,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useGpuStore } from '../stores/gpu'
@@ -108,6 +108,7 @@ const menuOptions = computed(() => {
     items.push({ type: 'divider', key: 'div' })
     items.push({ label: t('nav.users'), key: '/admin/users', icon: icon(PeopleOutline) })
     items.push({ label: t('nav.system'), key: '/admin/system', icon: icon(SettingsOutline) })
+    items.push({ label: t('nav.cluster'), key: '/admin/cluster', icon: icon(ServerOutline) })
   }
   return items
 })
@@ -121,6 +122,7 @@ const pageTitles = computed(() => ({
   '/gpu': t('page.gpu'),
   '/admin/users': t('page.users'),
   '/admin/system': t('page.system'),
+  '/admin/cluster': t('page.cluster'),
 }))
 const pageTitle = computed(() => pageTitles.value[route.path] || 'ProtFaiss')
 

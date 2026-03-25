@@ -28,7 +28,12 @@ from app.search.tasks import BLOCKING_EXECUTOR
 from app.build.dataset_db import (
     blocking_create_dataset, blocking_get_dataset,
 )
-from app.core.config import DATASETS_ROOT
+from app.core.config import DATASETS_ROOT as _DATASETS_ROOT_DEFAULT
+from app.core import config_loader
+
+
+def _get_datasets_root() -> str:
+    return config_loader.get("storage", "datasets_root", "") or _DATASETS_ROOT_DEFAULT
 
 _PROJECT_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -210,7 +215,7 @@ async def dataset_import(params: dict, context: dict) -> dict:
     # Create dataset directory and DB entry
     dataset_id = str(uuid.uuid4())
     short_id = dataset_id[:8]
-    dataset_dir = os.path.join(DATASETS_ROOT, dataset_id)
+    dataset_dir = os.path.join(_get_datasets_root(), dataset_id)
     index_dir = os.path.join(dataset_dir, "indices")
     fasta_path = os.path.join(dataset_dir, "input.fasta")
     db_table = f"proteins_{short_id}"
@@ -226,7 +231,6 @@ async def dataset_import(params: dict, context: dict) -> dict:
         "status": "importing",
         "visibility": "private",
         "fasta_path": fasta_path,
-        "index_dir": index_dir,
         "db_table": db_table,
     }
     await loop.run_in_executor(BLOCKING_EXECUTOR, blocking_create_dataset, entry)
@@ -242,7 +246,6 @@ async def dataset_import(params: dict, context: dict) -> dict:
         "dataset_id": dataset_id,
         "archive_path": archive_dest,
         "dataset_dir": dataset_dir,
-        "index_dir": index_dir,
         "fasta_path": fasta_path,
         "db_table": db_table,
         "manifest": manifest,

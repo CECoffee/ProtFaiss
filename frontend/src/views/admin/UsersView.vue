@@ -19,8 +19,8 @@
 
 <script setup>
 import { ref, computed, h, onMounted } from 'vue'
-import { NTag, NButton, NSpace, NInputNumber, NSelect, NPopconfirm, NSwitch } from 'naive-ui'
-import { listUsers, updateUser, deleteUser } from '../../api/adminApi'
+import { NTag, NButton, NSpace, NInputNumber, NSelect, NPopconfirm, NSwitch, NText } from 'naive-ui'
+import { listUsers, updateUser, deleteUser, getGpuStatus } from '../../api/adminApi'
 import { useAuthStore } from '../../stores/auth'
 import { useI18n } from '../../i18n/index.js'
 
@@ -28,6 +28,7 @@ const { t } = useI18n()
 const auth = useAuthStore()
 const users = ref([])
 const loading = ref(false)
+const maxQuota = ref(16)
 
 const roleOptions = computed(() => [
   { label: t('users.role.user'), value: 'user' },
@@ -53,15 +54,26 @@ const columns = computed(() => [
   {
     title: t('users.col.quota'),
     key: 'gpu_quota',
-    width: 120,
-    render: (r) => h(NInputNumber, {
-      value: r.gpu_quota,
-      min: 0,
-      max: 16,
-      size: 'small',
-      style: 'width: 90px',
-      onUpdateValue: (val) => handlePatch(r, { gpu_quota: val }),
-    }),
+    width: 160,
+    render: (r) => {
+      const parts = [
+        h(NInputNumber, {
+          value: r.gpu_quota,
+          min: 0,
+          max: maxQuota.value,
+          size: 'small',
+          style: 'width: 90px',
+          onUpdateValue: (val) => handlePatch(r, { gpu_quota: val }),
+        }),
+      ]
+      if (r.gpu_quota === 0) {
+        parts.push(
+          h(NText, { depth: 3, style: 'font-size: 12px; margin-left: 4px' },
+            { default: () => t('users.quota.unlimited') })
+        )
+      }
+      return h(NSpace, { align: 'center', size: 4, wrap: false }, { default: () => parts })
+    },
   },
   {
     title: t('users.col.active'),
@@ -121,5 +133,11 @@ async function handleDelete(user) {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  try {
+    const status = await getGpuStatus()
+    maxQuota.value = status.pool?.total_slots || 16
+  } catch {}
+})
 </script>

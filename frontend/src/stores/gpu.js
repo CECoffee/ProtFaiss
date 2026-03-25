@@ -1,11 +1,13 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import client from '../api/client'
 
 export const useGpuStore = defineStore('gpu', () => {
   const queue = ref([])
   const pool = ref({ total_slots: 0, used_slots: 0, available_slots: 0 })
   const loading = ref(false)
+
+  const gpuAvailable = computed(() => pool.value.total_slots > 0)
 
   async function fetchQueue() {
     loading.value = true
@@ -17,5 +19,5 @@ export const useGpuStore = defineStore('gpu', () => {
     loading.value = false
   }
 
-  return { queue, pool, loading, fetchQueue }
+  return { queue, pool, loading, gpuAvailable, fetchQueue }
 })
