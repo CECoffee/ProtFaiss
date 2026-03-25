@@ -26,7 +26,6 @@ async def search_submit(params: dict, context: dict) -> dict:
 
     # Resolve active dataset if not explicitly provided
     dataset_id = params.get("dataset_id")
-    index_dir = params.get("index_dir")
     db_table = params.get("db_table")
 
     if not dataset_id:
@@ -37,12 +36,11 @@ async def search_submit(params: dict, context: dict) -> dict:
             raise HandlerError(409, "No dataset is active. Please activate a dataset before searching.")
         dataset_id = active_id
 
-    if not db_table or not index_dir:
+    if not db_table:
         entry = await loop.run_in_executor(BLOCKING_EXECUTOR, blocking_get_dataset, dataset_id)
         if entry is None or entry.get("status") != "ready":
             raise HandlerError(409, "Active dataset is not ready.")
         db_table = entry["db_table"]
-        index_dir = entry["index_dir"]
 
     task_id = await submit_task(
         sequence,
@@ -51,7 +49,6 @@ async def search_submit(params: dict, context: dict) -> dict:
         db_table,
         user_id=user_id,
         dataset_id=dataset_id,
-        index_dir=index_dir,
     )
     return {"task_id": task_id}
 

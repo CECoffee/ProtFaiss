@@ -36,7 +36,6 @@ async def submit_task(
     db_table: str = "",
     user_id: Optional[str] = None,
     dataset_id: Optional[str] = None,
-    index_dir: Optional[str] = None,
 ) -> str:
     task_id = str(uuid.uuid4())
     data = {
@@ -52,7 +51,6 @@ async def submit_task(
         "pooling": pooling,
         "db_table": db_table,
         "dataset_id": dataset_id,
-        "index_dir": index_dir,
     }
     await task_set(task_id, data)
 
@@ -66,7 +64,7 @@ async def submit_task(
         )
     else:
         asyncio.create_task(
-            _legacy_background_task(task_id, sequence, top_k, pooling, db_table, dataset_id, index_dir, user_id)
+            _legacy_background_task(task_id, sequence, top_k, pooling, db_table, dataset_id, user_id)
         )
 
     return task_id
@@ -79,7 +77,6 @@ async def _legacy_background_task(
     pooling: str,
     db_table: str,
     dataset_id: Optional[str],
-    index_dir: Optional[str],
     user_id: Optional[str] = None,
 ) -> None:
     """In-process execution path for single-node (legacy) mode."""
@@ -109,7 +106,7 @@ async def _legacy_background_task(
 
         index_start = time.time()
         merged, load_seconds = await loop.run_in_executor(
-            BLOCKING_EXECUTOR, blocking_faiss_search, qvec, top_k, None, dataset_id, index_dir
+            BLOCKING_EXECUTOR, blocking_faiss_search, qvec, top_k, None, dataset_id
         )
         faiss_done = time.time()
 

@@ -102,8 +102,13 @@ def _load_shard_set(shard_dir: str) -> ShardSet:
     return ShardSet(shards=shards, locks=locks, gpu_resources=gpu_resources)
 
 
-def get_or_load_shards(dataset_id: str, index_dir: str) -> ShardSet:
+def get_or_load_shards(dataset_id: str) -> ShardSet:
     """Get ShardSet from LRU cache, loading if necessary."""
+    from app.core.config import DATASETS_ROOT as _DATASETS_ROOT_DEFAULT
+    index_dir = os.path.join(
+        config_loader.get("storage", "datasets_root", "") or _DATASETS_ROOT_DEFAULT,
+        dataset_id, "indices",
+    )
     with _CACHE_LOCK:
         if dataset_id in _CACHE:
             _CACHE.move_to_end(dataset_id)
@@ -160,14 +165,13 @@ def blocking_faiss_search(
     top_k: int,
     progress_cb: Optional[Callable] = None,
     dataset_id: Optional[str] = None,
-    index_dir: Optional[str] = None,
 ):
     """Blocking search across shards using the LRU cache."""
     import time as _time
     load_start = _time.time()
-    if not dataset_id or not index_dir:
-        raise RuntimeError("dataset_id and index_dir are required")
-    shard_set = get_or_load_shards(dataset_id, index_dir)
+    if not dataset_id:
+        raise RuntimeError("dataset_id is required")
+    shard_set = get_or_load_shards(dataset_id)
     shards = shard_set.shards
     locks = shard_set.locks
     load_seconds = _time.time() - load_start

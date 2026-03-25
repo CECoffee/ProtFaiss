@@ -105,7 +105,6 @@ async def build_submit(params: dict, context: dict) -> dict:
         "status": "building",
         "visibility": "private",
         "fasta_path": fasta_path,
-        "index_dir": index_dir,
         "db_table": db_table,
     }
     loop = asyncio.get_event_loop()
@@ -115,7 +114,6 @@ async def build_submit(params: dict, context: dict) -> dict:
         "dataset_id": dataset_id,
         "fasta_path": fasta_path,
         "db_table": db_table,
-        "index_dir": index_dir,
         "algorithm": algorithm,
         "nlist": nlist,
         "pq_m": pq_m,

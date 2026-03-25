@@ -11,7 +11,6 @@ The server uses the same length-prefixed JSON protocol as the daemon.
 """
 import asyncio
 import json
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
@@ -64,13 +63,6 @@ async def _run_search(task_id: str, params: dict) -> None:
     dataset_id = params.get("dataset_id")
     user_id = params.get("user_id")
 
-    # Reconstruct index_dir from dataset_id using the worker's local datasets_root.
-    # The path stored in DB/params may be a Windows-style relative path (e.g.
-    # "datasets\\uuid\\indices") which is unusable on Linux/WSL.
-    from app.core.config import DATASETS_ROOT as _DATASETS_ROOT_DEFAULT
-    _datasets_root = config_loader.get("storage", "datasets_root", "") or _DATASETS_ROOT_DEFAULT
-    index_dir = os.path.join(_datasets_root, dataset_id, "indices") if dataset_id else params.get("index_dir")
-
     loop = asyncio.get_event_loop()
     start_time = time.time()
     task_status = "done"
@@ -88,7 +80,7 @@ async def _run_search(task_id: str, params: dict) -> None:
 
         index_start = time.time()
         merged, load_seconds = await loop.run_in_executor(
-            _EXECUTOR, blocking_faiss_search, qvec, top_k, None, dataset_id, index_dir
+            _EXECUTOR, blocking_faiss_search, qvec, top_k, None, dataset_id
         )
         faiss_done = time.time()
 

@@ -599,7 +599,6 @@ class GpuScheduler:
                     "pooling": task_data.get("pooling", "mean"),
                     "db_table": task_data.get("db_table", ""),
                     "dataset_id": task_data.get("dataset_id"),
-                    "index_dir": task_data.get("index_dir"),
                     "user_id": task_data.get("user_id"),
                 },
             )

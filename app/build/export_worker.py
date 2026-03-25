@@ -91,7 +91,7 @@ def run_export_job(config: dict) -> None:
     try:
         blocking_export_dataset(
             fasta_path=fasta_path,
-            index_dir=entry["index_dir"],
+            dataset_id=dataset_id,
             manifest_data=entry,
             output_path=output_path,
             progress_cb=progress_cb,
