@@ -24,8 +24,12 @@ from app.build.config import (
     get_ivfpq_nlist, get_ivfpq_m, get_ivfpq_nbits,
     get_hnsw_m, get_hnsw_ef_construction,
 )
-from app.core.config import DATASETS_ROOT
+from app.core.config import DATASETS_ROOT as _DATASETS_ROOT_DEFAULT
 from app.core import config_loader
+
+
+def _get_datasets_root() -> str:
+    return config_loader.get("storage", "datasets_root", "") or _DATASETS_ROOT_DEFAULT
 
 _PROJECT_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -84,7 +88,7 @@ async def build_submit(params: dict, context: dict) -> dict:
 
     dataset_id = str(uuid.uuid4())
     short_id = dataset_id[:8]
-    dataset_dir = os.path.join(DATASETS_ROOT, dataset_id)
+    dataset_dir = os.path.join(_get_datasets_root(), dataset_id)
     index_dir = os.path.join(dataset_dir, "indices")
     fasta_path = os.path.join(dataset_dir, "input.fasta")
     db_table = f"proteins_{short_id}"

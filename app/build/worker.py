@@ -9,6 +9,7 @@ This process is terminated by the main FastAPI server on shutdown.
 """
 import argparse
 import json
+import os
 import sys
 import time
 
@@ -31,17 +32,24 @@ def run_build_job(config: dict) -> None:
         blocking_build_hnsw, fasta_data_iterator,
     )
     from app.core import encoder as _encoder
+    from app.core import config_loader
+    from app.core.config import DATASETS_ROOT as _DATASETS_ROOT_DEFAULT
 
     dataset_id = config["dataset_id"]
-    fasta_path = config["fasta_path"]
     db_table = config["db_table"]
-    index_dir = config["index_dir"]
     algorithm = config["algorithm"]
     nlist = config["nlist"]
     pq_m = config["pq_m"]
     nbits = config["nbits"]
     hnsw_m = config["hnsw_m"]
     ef_construction = config["ef_construction"]
+
+    # Reconstruct paths from dataset_id using this worker's configured datasets_root.
+    # The paths in config may be Windows-style paths from the control plane,
+    # unusable on Linux/WSL workers.
+    _datasets_root = config_loader.get("storage", "datasets_root", "") or _DATASETS_ROOT_DEFAULT
+    index_dir = os.path.join(_datasets_root, dataset_id, "indices")
+    fasta_path = os.path.join(_datasets_root, dataset_id, "input.fasta")
 
     _last_write = [0.0]
 
