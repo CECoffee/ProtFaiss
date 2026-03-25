@@ -72,6 +72,6 @@ async def search_result(params: dict, context: dict) -> dict:
         raise HandlerError(403, "Access denied")
 
     if task["status"] == "done":
-        remove_task(task_id)
+        await remove_task(task_id)
 
     return task

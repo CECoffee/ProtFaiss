@@ -9,18 +9,23 @@ def run(args: list[str]) -> None:
         print("Usage: search <sequence> [--top_k N] [--pooling mean|max]")
         return
 
-    sequence = args[0]
     top_k = 5
     pooling = "mean"
+    positional = []
 
-    i = 1
+    i = 0
     while i < len(args):
         if args[i] == "--top_k" and i + 1 < len(args):
             top_k = int(args[i + 1]); i += 2
         elif args[i] == "--pooling" and i + 1 < len(args):
             pooling = args[i + 1]; i += 2
         else:
-            i += 1
+            positional.append(args[i]); i += 1
+
+    if not positional:
+        print("Usage: search <sequence> [--top_k N] [--pooling mean|max]")
+        return
+    sequence = positional[0]
 
     client = get_client()
     try:
@@ -40,7 +45,7 @@ def run(args: list[str]) -> None:
                 return
             else:
                 idx_status = task.get("index_status", "")
-                print(f"  [{status}] index:{idx_status}", end="\r", flush=True)
+                print(f"  [{status}] index:{idx_status}\x1b[K", end="\r", flush=True)
                 time.sleep(0.5)
     except IpcError as e:
         print(f"Error {e.code}: {e.message}")

@@ -15,16 +15,21 @@ def cmd_export(args: list) -> None:
         print("Usage: export <dataset_id> [--output <path>]")
         return
 
-    dataset_id = args[0]
     output_path = None
+    positional = []
 
-    i = 1
+    i = 0
     while i < len(args):
         if args[i] == "--output" and i + 1 < len(args):
             output_path = args[i + 1]
             i += 2
         else:
-            i += 1
+            positional.append(args[i]); i += 1
+
+    if not positional:
+        print("Usage: export <dataset_id> [--output <path>]")
+        return
+    dataset_id = positional[0]
 
     client = get_client()
     try:
@@ -51,7 +56,7 @@ def cmd_export(args: list) -> None:
                     print("Export failed.")
                     return
                 else:
-                    print(f"  [{s}] …", end="\r", flush=True)
+                    print(f"  [{s}] …\x1b[K", end="\r", flush=True)
                 time.sleep(2)
             except KeyboardInterrupt:
                 print(f"\nStopped polling. Export continues in background.")
@@ -92,19 +97,24 @@ def cmd_import(args: list) -> None:
         print("Usage: import <archive_path> [--name NAME]")
         return
 
-    archive_path = args[0]
-    if not os.path.isfile(archive_path):
-        print(f"File not found: {archive_path}")
-        return
-
     name = ""
-    i = 1
+    positional = []
+
+    i = 0
     while i < len(args):
         if args[i] == "--name" and i + 1 < len(args):
             name = args[i + 1]
             i += 2
         else:
-            i += 1
+            positional.append(args[i]); i += 1
+
+    if not positional:
+        print("Usage: import <archive_path> [--name NAME]")
+        return
+    archive_path = positional[0]
+    if not os.path.isfile(archive_path):
+        print(f"File not found: {archive_path}")
+        return
 
     client = get_client()
     try:
@@ -122,7 +132,7 @@ def cmd_import(args: list) -> None:
                 step = status.get("progress_step", "")
                 pct = status.get("progress_pct") or 0
                 s = status.get("status", "")
-                print(f"  [{s}] {step} {pct:.1f}%", end="\r", flush=True)
+                print(f"  [{s}] {step} {pct:.1f}%\x1b[K", end="\r", flush=True)
                 if s == "ready":
                     print()
                     print(f"Import complete: {status.get('num_indexed') or status.get('num_sequences')} sequences ready.")

@@ -10,20 +10,28 @@ def cmd_build(args: list[str]) -> None:
         print("Usage: build <fasta_path> [--name NAME] [--algorithm flat|ivfpq|hnsw]")
         return
 
-    fasta_path = args[0]
-    if not os.path.isfile(fasta_path):
-        print(f"File not found: {fasta_path}"); return
-
-    name = os.path.basename(fasta_path)
+    name = None
     algorithm = "flat"
-    i = 1
+    positional = []
+
+    i = 0
     while i < len(args):
         if args[i] == "--name" and i + 1 < len(args):
             name = args[i + 1]; i += 2
         elif args[i] == "--algorithm" and i + 1 < len(args):
             algorithm = args[i + 1]; i += 2
         else:
-            i += 1
+            positional.append(args[i]); i += 1
+
+    if not positional:
+        print("Usage: build <fasta_path> [--name NAME] [--algorithm flat|ivfpq|hnsw]")
+        return
+    fasta_path = positional[0]
+    if not os.path.isfile(fasta_path):
+        print(f"File not found: {fasta_path}"); return
+
+    if name is None:
+        name = os.path.basename(fasta_path)
 
     client = get_client()
     try:
@@ -43,7 +51,7 @@ def cmd_build(args: list[str]) -> None:
                 pct = status.get("progress_pct") or 0
                 detail = status.get("progress_detail", "")
                 s = status.get("status", "")
-                print(f"  [{s}] {step} {pct:.1f}% {detail}", end="\r", flush=True)
+                print(f"  [{s}] {step} {pct:.1f}% {detail}\x1b[K", end="\r", flush=True)
                 if s in ("ready", "error"):
                     print()
                     if s == "ready":
