@@ -50,3 +50,59 @@ def cmd_gpu_status(args: list[str]) -> None:
             print(f"  {k}: {v}")
     except IpcError as e:
         print(f"Error {e.code}: {e.message}")
+
+
+def cmd_gpu_history(args: list[str]) -> None:
+    client = get_client()
+    params = {"limit": 50, "offset": 0}
+
+    i = 0
+    while i < len(args):
+        if args[i] == "--limit" and i + 1 < len(args):
+            params["limit"] = int(args[i + 1])
+            i += 2
+        elif args[i] == "--offset" and i + 1 < len(args):
+            params["offset"] = int(args[i + 1])
+            i += 2
+        elif args[i] == "--status" and i + 1 < len(args):
+            params["status_filter"] = args[i + 1].split(",")
+            i += 2
+        elif args[i] == "--type" and i + 1 < len(args):
+            params["task_type_filter"] = args[i + 1]
+            i += 2
+        elif args[i] == "--user" and i + 1 < len(args):
+            params["user_id_filter"] = args[i + 1]
+            i += 2
+        else:
+            i += 1
+
+    try:
+        data = client.call("gpu.admin_history", params)
+    except IpcError as e:
+        print(f"Error {e.code}: {e.message}")
+        return
+
+    tasks = data.get("tasks", [])
+    total = data.get("total", 0)
+    has_more = data.get("has_more", False)
+
+    if not tasks:
+        print("  No historical tasks found.")
+        return
+
+    print(f"\nGPU Task History (showing {len(tasks)} of {total} total)")
+    print(f"  {'ID':<10} {'User':<12} {'Type':<8} {'Status':<10} {'GPU(s)':<8} {'Completed'}")
+    print("  " + "-" * 70)
+
+    for t in tasks:
+        task_id = str(t.get("id", ""))[:8]
+        username = t.get("username", "")[:10]
+        task_type = t.get("task_type", "")[:7]
+        status = t.get("status", "")
+        gpu_sec = t.get("gpu_seconds", 0) or 0
+        completed = t.get("completed_at", "")[:19] if t.get("completed_at") else "N/A"
+
+        print(f"  {task_id:<10} {username:<12} {task_type:<8} {status:<10} {gpu_sec:<8.1f} {completed}")
+
+    if has_more:
+        print(f"\n  (Use --offset {params['offset'] + params['limit']} to see more)")

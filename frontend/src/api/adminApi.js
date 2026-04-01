@@ -39,3 +39,13 @@ export async function getGpuStatus() {
   const resp = await client.get('/gpu/status')
   return resp.data
 }
+
+export async function getGpuHistory(params = {}) {
+  const resp = await client.get('/gpu/history', { params })
+  return resp.data
+}
+
+export async function getAdminGpuHistory(params = {}) {
+  const resp = await client.get('/admin/gpu/history', { params })
+  return resp.data
+}

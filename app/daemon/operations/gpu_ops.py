@@ -6,7 +6,10 @@ import asyncio
 
 from app.daemon.handler import register, HandlerError
 from app.search.tasks import BLOCKING_EXECUTOR
-from app.scheduler.scheduler import blocking_get_queue_for_user, blocking_get_full_queue, blocking_cancel_task
+from app.scheduler.scheduler import (
+    blocking_get_queue_for_user, blocking_get_full_queue, blocking_cancel_task,
+    blocking_get_history_for_user, blocking_get_full_history
+)
 from app.core import gpu as _gpu
 from app.core import config_loader
 
@@ -63,3 +66,53 @@ async def gpu_status(params: dict, context: dict) -> dict:
         "multi_gpu_enabled": config_loader.get("gpu", "multi_gpu_enabled", True),
         "pool": _pool_snapshot(is_admin=is_admin),
     }
+
+
+@register("gpu.history")
+async def gpu_history(params: dict, context: dict) -> dict:
+    user_id = context["user_id"]
+    role = context.get("role", "user")
+    is_admin = role == "admin"
+
+    limit = min(params.get("limit", 50), 500)
+    offset = params.get("offset", 0)
+    status_filter = params.get("status_filter")
+    task_type_filter = params.get("task_type_filter")
+    task_id_filter = params.get("task_id_filter")
+    username_filter = params.get("username_filter")
+    start_date = params.get("start_date")
+    end_date = params.get("end_date")
+
+    loop = asyncio.get_event_loop()
+
+    if is_admin:
+        result = await loop.run_in_executor(
+            BLOCKING_EXECUTOR, blocking_get_full_history,
+            limit, offset, status_filter, task_type_filter, task_id_filter, username_filter, start_date, end_date
+        )
+    else:
+        result = await loop.run_in_executor(
+            BLOCKING_EXECUTOR, blocking_get_history_for_user,
+            user_id, limit, offset, status_filter, task_type_filter, task_id_filter, start_date, end_date
+        )
+
+    return result
+
+
+@register("gpu.admin_history")
+async def gpu_admin_history(params: dict, context: dict) -> dict:
+    limit = min(params.get("limit", 50), 500)
+    offset = params.get("offset", 0)
+    status_filter = params.get("status_filter")
+    task_type_filter = params.get("task_type_filter")
+    task_id_filter = params.get("task_id_filter")
+    username_filter = params.get("username_filter")
+    start_date = params.get("start_date")
+    end_date = params.get("end_date")
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        BLOCKING_EXECUTOR, blocking_get_full_history,
+        limit, offset, status_filter, task_type_filter, task_id_filter, username_filter, start_date, end_date
+    )
+    return result

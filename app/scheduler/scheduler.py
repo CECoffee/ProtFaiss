@@ -302,6 +302,117 @@ def blocking_get_full_queue() -> list:
         pool.putconn(conn)
 
 
+def blocking_get_history_for_user(user_id: str, limit: int = 50, offset: int = 0,
+                                   status_filter: list = None, task_type_filter: str = None,
+                                   task_id_filter: str = None,
+                                   start_date: str = None, end_date: str = None) -> dict:
+    pool = _get_db_pool()
+    conn = pool.getconn()
+    try:
+        with conn.cursor() as cur:
+            where_clauses = ["user_id = %s", "status IN ('done', 'failed', 'cancelled')"]
+            params = [user_id]
+
+            if status_filter:
+                where_clauses.append(f"status IN ({','.join(['%s'] * len(status_filter))})")
+                params.extend(status_filter)
+            if task_type_filter:
+                where_clauses.append("task_type = %s")
+                params.append(task_type_filter)
+            if task_id_filter:
+                where_clauses.append("id::text LIKE %s")
+                params.append(f"%{task_id_filter}%")
+            if start_date:
+                where_clauses.append("submitted_at >= %s")
+                params.append(start_date)
+            if end_date:
+                where_clauses.append("submitted_at <= %s")
+                params.append(end_date)
+
+            where_sql = " AND ".join(where_clauses)
+
+            cur.execute(f"SELECT COUNT(*) FROM gpu_tasks WHERE {where_sql}", params)
+            total = cur.fetchone()[0]
+
+            params.extend([limit, offset])
+            cur.execute(
+                f"SELECT id, task_type, status, priority, gpu_slots, dataset_id, "
+                f"search_task_id, submitted_at, started_at, completed_at, gpu_seconds "
+                f"FROM gpu_tasks WHERE {where_sql} "
+                f"ORDER BY completed_at DESC LIMIT %s OFFSET %s",
+                params
+            )
+            tasks = [_task_row(r) for r in cur.fetchall()]
+            return {"tasks": tasks, "total": total, "has_more": (offset + len(tasks)) < total}
+    finally:
+        pool.putconn(conn)
+
+
+def blocking_get_full_history(limit: int = 50, offset: int = 0,
+                               status_filter: list = None, task_type_filter: str = None,
+                               task_id_filter: str = None, username_filter: str = None,
+                               start_date: str = None, end_date: str = None) -> dict:
+    pool = _get_db_pool()
+    conn = pool.getconn()
+    try:
+        with conn.cursor() as cur:
+            where_clauses = ["gt.status IN ('done', 'failed', 'cancelled')"]
+            params = []
+
+            if status_filter:
+                where_clauses.append(f"gt.status IN ({','.join(['%s'] * len(status_filter))})")
+                params.extend(status_filter)
+            if task_type_filter:
+                where_clauses.append("gt.task_type = %s")
+                params.append(task_type_filter)
+            if task_id_filter:
+                where_clauses.append("gt.id::text LIKE %s")
+                params.append(f"%{task_id_filter}%")
+            if username_filter:
+                where_clauses.append("u.username LIKE %s")
+                params.append(f"%{username_filter}%")
+            if start_date:
+                where_clauses.append("gt.submitted_at >= %s")
+                params.append(start_date)
+            if end_date:
+                where_clauses.append("gt.submitted_at <= %s")
+                params.append(end_date)
+
+            where_sql = " AND ".join(where_clauses)
+
+            cur.execute(f"SELECT COUNT(*) FROM gpu_tasks gt JOIN users u ON u.id = gt.user_id WHERE {where_sql}", params)
+            total = cur.fetchone()[0]
+
+            params.extend([limit, offset])
+            cur.execute(
+                f"SELECT gt.id, gt.user_id, u.username, gt.task_type, gt.status, gt.priority, "
+                f"gt.gpu_slots, gt.dataset_id, gt.search_task_id, gt.submitted_at, "
+                f"gt.started_at, gt.completed_at, gt.gpu_seconds "
+                f"FROM gpu_tasks gt JOIN users u ON u.id = gt.user_id "
+                f"WHERE {where_sql} "
+                f"ORDER BY gt.completed_at DESC LIMIT %s OFFSET %s",
+                params
+            )
+            rows = cur.fetchall()
+            tasks = [
+                {
+                    "id": str(r[0]), "user_id": str(r[1]), "username": r[2],
+                    "task_type": r[3], "status": r[4], "priority": r[5],
+                    "gpu_slots": r[6],
+                    "dataset_id": str(r[7]) if r[7] else None,
+                    "search_task_id": r[8],
+                    "submitted_at": r[9].isoformat() if r[9] else None,
+                    "started_at": r[10].isoformat() if r[10] else None,
+                    "completed_at": r[11].isoformat() if r[11] else None,
+                    "gpu_seconds": r[12],
+                }
+                for r in rows
+            ]
+            return {"tasks": tasks, "total": total, "has_more": (offset + len(tasks)) < total}
+    finally:
+        pool.putconn(conn)
+
+
 def blocking_cancel_task(task_id: str) -> bool:
     pool = _get_db_pool()
     conn = pool.getconn()

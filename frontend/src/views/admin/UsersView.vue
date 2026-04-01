@@ -36,17 +36,18 @@ const roleOptions = computed(() => [
 ])
 
 const columns = computed(() => [
-  { title: t('users.col.username'), key: 'username', width: 140 },
-  { title: t('users.col.email'), key: 'email', render: (r) => r.email || '—' },
+  { title: 'UUID', key: 'id', width: 240, ellipsis: { tooltip: true } },
+  { title: t('users.col.username'), key: 'username', width: 100 },
+  { title: t('users.col.email'), key: 'email', width: 160, render: (r) => r.email || '—' },
   {
     title: t('users.col.role'),
     key: 'role',
-    width: 130,
+    width: 100,
     render: (r) => h(NSelect, {
       value: r.role,
       options: roleOptions.value,
       size: 'small',
-      style: 'width: 110px',
+      style: 'width: 80px',
       disabled: r.id === auth.user?.id,
       onUpdateValue: (val) => handlePatch(r, { role: val }),
     }),
@@ -54,7 +55,7 @@ const columns = computed(() => [
   {
     title: t('users.col.quota'),
     key: 'gpu_quota',
-    width: 160,
+    width: 150,
     render: (r) => {
       const parts = [
         h(NInputNumber, {
@@ -62,7 +63,7 @@ const columns = computed(() => [
           min: 0,
           max: maxQuota.value,
           size: 'small',
-          style: 'width: 90px',
+          style: 'width: 80px',
           onUpdateValue: (val) => handlePatch(r, { gpu_quota: val }),
         }),
       ]
@@ -78,7 +79,7 @@ const columns = computed(() => [
   {
     title: t('users.col.active'),
     key: 'is_active',
-    width: 90,
+    width: 60,
     render: (r) => h(NSwitch, {
       value: r.is_active,
       size: 'small',
@@ -89,7 +90,7 @@ const columns = computed(() => [
   {
     title: t('users.col.actions'),
     key: 'actions',
-    width: 100,
+    width: 80,
     render: (r) => h(NPopconfirm, {
       onPositiveClick: () => handleDelete(r),
     }, {

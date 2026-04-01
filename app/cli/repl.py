@@ -109,6 +109,14 @@ _COMMANDS: dict[str, CommandEntry] = {
         description="Show full GPU queue (admin)",
         category="GPU",
     ),
+    "gpu-history": CommandEntry(
+        handler=gpu.cmd_gpu_history,
+        usage="gpu-history [--limit N] [--offset N] [--status done,failed,cancelled] [--type search|build] [--user USER_ID]",
+        description="Show GPU task history",
+        category="GPU",
+        flags=["--limit", "--offset", "--status", "--type", "--user"],
+        flag_values={"--type": ["search", "build"]},
+    ),
     "cancel": CommandEntry(
         handler=gpu.cmd_cancel,
         usage="cancel <task_id>",

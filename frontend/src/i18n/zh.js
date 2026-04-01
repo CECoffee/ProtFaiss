@@ -32,8 +32,6 @@ export default {
   'search.results': '检索结果',
   'search.col.header': '序列头',
   'search.col.sequence': '序列',
-  'search.col.ko': 'KO',
-  'search.col.ec': 'EC',
   'search.col.distance': '距离',
 
   // SearchProgress
@@ -49,7 +47,7 @@ export default {
 
   // BuilderView
   'build.title': '从 FASTA 构建索引',
-  'build.subtitle': '上传 FASTA 文件，将序列导入 PostgreSQL 并构建 FAISS 索引。',
+  'build.subtitle': '上传 FASTA 文件，将序列导入数据库并构建索引。',
   'build.fileLabel': 'FASTA 文件（.fasta / .fa / .faa）',
   'build.fileDrag': '点击或拖拽 FASTA 文件到此处',
   'build.fileSupports': '支持 .fasta、.fa、.faa',
@@ -113,14 +111,24 @@ export default {
   'gpu.totalSlots': 'GPU 总槽位',
   'gpu.usedSlots': '已用槽位',
   'gpu.availableSlots': '可用槽位',
-  'gpu.myTasks': '我的 GPU 任务',
+  'gpu.activeTasks': '进行任务',
+  'gpu.taskHistory': '历史任务',
+  'gpu.autoRefresh': '每 3 秒自动刷新',
   'gpu.btnRefresh': '刷新',
-  'gpu.empty': '暂无 GPU 任务',
+  'gpu.filterStatus': '状态',
+  'gpu.filterType': '类型',
+  'gpu.filterDateRangeStart': '不早于',
+  'gpu.filterDateRangeEnd': '不晚于',
+  'gpu.filterTaskId': '任务ID',
+  'gpu.filterUsername': '用户名',
+  'gpu.btnApply': '应用',
+  'gpu.btnReset': '重置',
   'gpu.col.type': '类型',
   'gpu.col.status': '状态',
   'gpu.col.slots': 'GPU 槽位',
   'gpu.col.submitted': '提交时间',
   'gpu.col.started': '开始时间',
+  'gpu.col.completed': '完成时间',
   'gpu.col.gpuSeconds': 'GPU 秒数',
 
   // LoginView

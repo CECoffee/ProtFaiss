@@ -26,7 +26,6 @@
           size="small"
           striped
         />
-        <n-empty v-if="!queue.length && !queueLoading" :description="t('system.queueEmpty')" />
       </n-card>
 
       <!-- Config reload -->
