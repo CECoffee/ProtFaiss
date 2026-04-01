@@ -127,6 +127,8 @@ class ClusterGpuPool:
             node_used: Dict[str, int] = {}
             for _, (nid, s) in self._allocations.items():
                 node_used[nid] = node_used.get(nid, 0) + s
+            total = sum(v for k, v in self._node_slots.items() if k not in excluded)
+            used = sum(s for nid, s in self._allocations.values() if nid not in excluded)
             return {
                 "nodes": {
                     nid: {
@@ -139,8 +141,9 @@ class ClusterGpuPool:
                     for nid, total in self._node_slots.items()
                     if nid not in excluded
                 },
-                "total_slots": sum(v for k, v in self._node_slots.items() if k not in excluded),
-                "used_slots": sum(s for nid, s in self._allocations.values() if nid not in excluded),
+                "total_slots": total,
+                "used_slots": used,
+                "available_slots": max(0, total - used),
             }
 
 

@@ -9,8 +9,24 @@ export default defineConfig({
       '/auth': { target: 'http://localhost:8000', changeOrigin: true },
       '/query': { target: 'http://localhost:8000', changeOrigin: true },
       '/health': { target: 'http://localhost:8000', changeOrigin: true },
-      '/build': { target: 'http://localhost:8000', changeOrigin: true },
-      '/datasets': { target: 'http://localhost:8000', changeOrigin: true },
+      '/build': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        bypass(req) {
+          if (req.headers.accept?.includes('text/html')) {
+            return req.url
+          }
+        },
+      },
+      '/datasets': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        bypass(req) {
+          if (req.headers.accept?.includes('text/html')) {
+            return req.url
+          }
+        },
+      },
       '/admin': {
         target: 'http://localhost:8000',
         changeOrigin: true,
@@ -22,7 +38,15 @@ export default defineConfig({
           }
         },
       },
-      '/gpu': { target: 'http://localhost:8000', changeOrigin: true },
+      '/gpu': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        bypass(req) {
+          if (req.headers.accept?.includes('text/html')) {
+            return req.url
+          }
+        },
+      },
     },
   },
 })
