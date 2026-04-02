@@ -21,63 +21,73 @@
         </n-space>
       </n-card>
 
-      <!-- Search form -->
-      <n-card :title="t('search.title')">
-        <n-space vertical :size="16">
-          <n-form-item :label="t('search.seqLabel')" :show-feedback="false">
-            <n-input
-              v-model:value="sequence"
-              type="textarea"
-              :rows="5"
-              placeholder=">protein_id&#10;MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQTLGQHDFSAGEGLYTHMKALRPDEDRLSPLHSVYVDQWDWERVMGDGERQFSTLKSTVEAIWAGIKATEAAVSEEFGLAPFLPDQIHFVHSQELLSRYPDLDAKGRERAIAKDLGAVFLVGIGGKLSDGHRHDVRAPDYDDWSTPSELGHAGLNGDILVWNPVLEDAFELSSMGIRVDADTLKHQLALTGDEDRLELEWHQALLRGEMPQTIGGGIGQSRLTMLLLQLPHIGQVQAGVWPAAVRESVPSLL"
-              :disabled="status === 'pending'"
+      <n-tabs type="line" animated>
+        <n-tab-pane name="search" :tab="t('search.tab.search')">
+          <n-space vertical :size="16">
+            <!-- Search form -->
+            <n-card :title="t('search.title')">
+              <n-space vertical :size="16">
+                <n-form-item :label="t('search.seqLabel')" :show-feedback="false">
+                  <n-input
+                    v-model:value="sequence"
+                    type="textarea"
+                    :rows="5"
+                    placeholder=">protein_id&#10;MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQTLGQHDFSAGEGLYTHMKALRPDEDRLSPLHSVYVDQWDWERVMGDGERQFSTLKSTVEAIWAGIKATEAAVSEEFGLAPFLPDQIHFVHSQELLSRYPDLDAKGRERAIAKDLGAVFLVGIGGKLSDGHRHDVRAPDYDDWSTPSELGHAGLNGDILVWNPVLEDAFELSSMGIRVDADTLKHQLALTGDEDRLELEWHQALLRGEMPQTIGGGIGQSRLTMLLLQLPHIGQVQAGVWPAAVRESVPSLL"
+                    :disabled="status === 'pending'"
+                  />
+                </n-form-item>
+
+                <n-space>
+                  <n-form-item :label="t('search.topK')" :show-feedback="false" style="width: 120px">
+                    <n-input-number v-model:value="topK" :min="1" :max="100" />
+                  </n-form-item>
+                  <n-form-item :label="t('search.pooling')" :show-feedback="false" style="width: 140px">
+                    <n-select v-model:value="pooling" :options="poolingOptions" />
+                  </n-form-item>
+                </n-space>
+
+                <n-alert v-if="noDatasetError" type="warning" :title="t('search.noDataset')" />
+                <n-alert v-if="!gpuStore.gpuAvailable" type="error" :title="t('search.noGpu')" />
+
+                <n-space>
+                  <n-button
+                    type="primary"
+                    :loading="status === 'pending'"
+                    :disabled="!sequence.trim() || status === 'pending' || !gpuStore.gpuAvailable"
+                    @click="handleSubmit"
+                  >
+                    {{ t('search.btnSearch') }}
+                  </n-button>
+                  <n-button v-if="status === 'pending'" @click="handleCancel">{{ t('search.btnCancel') }}</n-button>
+                </n-space>
+              </n-space>
+            </n-card>
+
+            <!-- Progress steps -->
+            <SearchProgress
+              v-if="status !== 'idle'"
+              :phase="phase"
+              :times="meta"
+              :error="errorMsg"
             />
-          </n-form-item>
 
-          <n-space>
-            <n-form-item :label="t('search.topK')" :show-feedback="false" style="width: 120px">
-              <n-input-number v-model:value="topK" :min="1" :max="100" />
-            </n-form-item>
-            <n-form-item :label="t('search.pooling')" :show-feedback="false" style="width: 140px">
-              <n-select v-model:value="pooling" :options="poolingOptions" />
-            </n-form-item>
+            <!-- Results -->
+            <n-card v-if="status === 'done' && result?.length" :title="t('search.results')">
+              <n-data-table
+                :columns="resultColumns"
+                :data="result"
+                :pagination="{ pageSize: 10 }"
+                size="small"
+                striped
+              />
+            </n-card>
           </n-space>
+        </n-tab-pane>
 
-          <n-alert v-if="noDatasetError" type="warning" :title="t('search.noDataset')" />
-          <n-alert v-if="!gpuStore.gpuAvailable" type="error" :title="t('search.noGpu')" />
-
-          <n-space>
-            <n-button
-              type="primary"
-              :loading="status === 'pending'"
-              :disabled="!sequence.trim() || status === 'pending' || !gpuStore.gpuAvailable"
-              @click="handleSubmit"
-            >
-              {{ t('search.btnSearch') }}
-            </n-button>
-            <n-button v-if="status === 'pending'" @click="handleCancel">{{ t('search.btnCancel') }}</n-button>
-          </n-space>
-        </n-space>
-      </n-card>
-
-      <!-- Progress steps -->
-      <SearchProgress
-        v-if="status !== 'idle'"
-        :phase="phase"
-        :times="meta"
-        :error="errorMsg"
-      />
-
-      <!-- Results -->
-      <n-card v-if="status === 'done' && result?.length" :title="t('search.results')">
-        <n-data-table
-          :columns="resultColumns"
-          :data="result"
-          :pagination="{ pageSize: 10 }"
-          size="small"
-          striped
-        />
-      </n-card>
+        <n-tab-pane name="history" :tab="t('search.tab.history')">
+          <SearchHistoryTab />
+        </n-tab-pane>
+      </n-tabs>
     </n-space>
   </div>
 </template>
@@ -91,6 +101,7 @@ import { listDatasets, switchDataset } from '../api/buildApi'
 import { useI18n } from '../i18n/index.js'
 import { useGpuStore } from '../stores/gpu'
 import SearchProgress from '../components/SearchProgress.vue'
+import SearchHistoryTab from '../components/SearchHistoryTab.vue'
 
 const { t } = useI18n()
 const gpuStore = useGpuStore()
@@ -126,16 +137,16 @@ const datasetOptions = computed(() =>
 )
 
 const resultColumns = computed(() => [
-  { title: '#', key: 'id', width: 70 },
+  { title: t('search.history.col.id'), key: 'id', width: 90 },
   {
     title: t('search.col.header'),
     key: 'header',
-    render: (row) => h(NEllipsis, { style: 'max-width: 200px' }, { default: () => row.header || '—' }),
+    render: (row) => h(NEllipsis, { style: 'max-width: 350px' }, { default: () => row.header || '—' }),
   },
   {
     title: t('search.col.sequence'),
     key: 'sequence',
-    render: (row) => h(NEllipsis, { style: 'max-width: 180px' }, { default: () => row.sequence || '—' }),
+    render: (row) => h(NEllipsis, { style: 'max-width: 350px' }, { default: () => row.sequence || '—' }),
   },
   { title: t('search.col.ko'), key: 'ko', width: 90 },
   { title: t('search.col.ec'), key: 'ec', width: 90 },

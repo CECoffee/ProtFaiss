@@ -47,7 +47,6 @@
                 :pagination="{ pageSize: 10 }"
                 size="small"
                 striped
-                aria-description=""
               />
             </n-space>
           </n-tab-pane>

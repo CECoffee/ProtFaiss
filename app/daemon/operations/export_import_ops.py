@@ -21,6 +21,7 @@ import os
 import subprocess
 import sys
 import uuid
+from pathlib import Path
 from typing import Dict
 
 from app.daemon.handler import register, HandlerError
@@ -35,18 +36,24 @@ from app.core import config_loader
 def _get_datasets_root() -> str:
     return config_loader.get("storage", "datasets_root", "") or _DATASETS_ROOT_DEFAULT
 
-_PROJECT_ROOT = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
+_PROJECT_ROOT = str(Path(__file__).parents[3])
+
+class _ExportEntry:
+    __slots__ = ("proc", "output_path")
+
+    def __init__(self, proc: subprocess.Popen, output_path: str) -> None:
+        self.proc = proc
+        self.output_path = output_path
+
 
 # Daemon-owned export / import process registries
-_ACTIVE_EXPORT_PROCESSES: Dict[str, dict] = {}   # dataset_id → {proc, output_path}
+_ACTIVE_EXPORT_PROCESSES: Dict[str, _ExportEntry] = {}   # dataset_id → ExportEntry
 _ACTIVE_IMPORT_PROCESSES: Dict[str, subprocess.Popen] = {}  # dataset_id → proc
 
 
 def _reap_finished() -> None:
     done_e = [did for did, info in _ACTIVE_EXPORT_PROCESSES.items()
-              if info["proc"].poll() is not None]
+              if info.proc.poll() is not None]
     for did in done_e:
         del _ACTIVE_EXPORT_PROCESSES[did]
 
@@ -58,8 +65,8 @@ def _reap_finished() -> None:
 
 def terminate_all_export_import_processes() -> None:
     """Called during daemon shutdown."""
-    for proc_info in list(_ACTIVE_EXPORT_PROCESSES.values()):
-        proc = proc_info["proc"]
+    for entry in list(_ACTIVE_EXPORT_PROCESSES.values()):
+        proc = entry.proc
         if proc.poll() is None:
             proc.terminate()
             try:
@@ -116,10 +123,11 @@ async def dataset_export(params: dict, context: dict) -> dict:
 
     # Reject if already exporting
     existing = _ACTIVE_EXPORT_PROCESSES.get(dataset_id)
-    if existing and existing["proc"].poll() is None:
+    if existing and existing.proc.poll() is None:
         raise HandlerError(409, "Export already in progress for this dataset")
 
-    output_path = os.path.join(DATASETS_ROOT, dataset_id, "export.7z")
+    datasets_root = _get_datasets_root()
+    output_path = os.path.join(datasets_root, dataset_id, "export.7z")
 
     # Remove stale export if present
     if os.path.isfile(output_path):
@@ -133,7 +141,7 @@ async def dataset_export(params: dict, context: dict) -> dict:
         "dataset_id": dataset_id,
         "output_path": output_path,
     }
-    config_path = os.path.join(DATASETS_ROOT, dataset_id, "export_config.json")
+    config_path = os.path.join(datasets_root, dataset_id, "export_config.json")
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(job_config, f)
 
@@ -141,7 +149,7 @@ async def dataset_export(params: dict, context: dict) -> dict:
         [sys.executable, "-m", "app.build.export_worker", "--config", config_path],
         cwd=_PROJECT_ROOT,
     )
-    _ACTIVE_EXPORT_PROCESSES[dataset_id] = {"proc": proc, "output_path": output_path}
+    _ACTIVE_EXPORT_PROCESSES[dataset_id] = _ExportEntry(proc=proc, output_path=output_path)
 
     return {"dataset_id": dataset_id, "status": "exporting"}
 
@@ -161,10 +169,10 @@ async def dataset_export_status(params: dict, context: dict) -> dict:
         raise HandlerError(404, "Dataset not found")
     _check_access(entry, user_id, role)
 
-    output_path = os.path.join(DATASETS_ROOT, dataset_id, "export.7z")
+    output_path = os.path.join(_get_datasets_root(), dataset_id, "export.7z")
     proc_info = _ACTIVE_EXPORT_PROCESSES.get(dataset_id)
 
-    if proc_info and proc_info["proc"].poll() is None:
+    if proc_info and proc_info.proc.poll() is None:
         return {"dataset_id": dataset_id, "status": "exporting"}
 
     if os.path.isfile(output_path):
@@ -176,7 +184,7 @@ async def dataset_export_status(params: dict, context: dict) -> dict:
             "dataset_name": entry.get("name", "export"),
         }
 
-    if proc_info and proc_info["proc"].poll() not in (None, 0):
+    if proc_info and proc_info.proc.poll() not in (None, 0):
         return {"dataset_id": dataset_id, "status": "error"}
 
     return {"dataset_id": dataset_id, "status": "idle"}

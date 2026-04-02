@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import uuid
+from pathlib import Path
 from typing import Dict
 
 from app.daemon.handler import register, HandlerError
@@ -31,9 +32,7 @@ from app.core import config_loader
 def _get_datasets_root() -> str:
     return config_loader.get("storage", "datasets_root", "") or _DATASETS_ROOT_DEFAULT
 
-_PROJECT_ROOT = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
+_PROJECT_ROOT = str(Path(__file__).parents[3])
 
 _ACTIVE_BUILD_PROCESSES: Dict[str, subprocess.Popen] = {}
 

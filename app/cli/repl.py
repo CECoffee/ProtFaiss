@@ -13,7 +13,7 @@ from typing import Callable, List, Optional
 
 from app.cli.ipc_client import get_client, IpcError
 from app.cli.commands import (
-    search, build, datasets, gpu, users, config as cfg_cmd, system, export_import, cluster,
+    search, build, datasets, gpu, users, config as cfg_cmd, system, export_import, cluster, history,
 )
 
 _HISTORY_FILE = Path(os.path.expanduser("~/.protfaiss/cli_history"))
@@ -37,6 +37,13 @@ _COMMANDS: dict[str, CommandEntry] = {
         category="Search",
         flags=["--top_k", "--pooling"],
         flag_values={"--pooling": ["mean", "max"]},
+    ),
+    "history": CommandEntry(
+        handler=history.run,
+        usage="history [<task_id>] [--limit N] [--offset N]",
+        description="List search history or view a past result",
+        category="Search",
+        flags=["--limit", "--offset"],
     ),
     "build": CommandEntry(
         handler=build.cmd_build,

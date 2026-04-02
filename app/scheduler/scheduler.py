@@ -25,6 +25,7 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Dict, Optional
 
 from app.core import config_loader
@@ -193,7 +194,7 @@ def blocking_enqueue_search_task(search_task_id: str, user_id: str, dataset_id: 
 _SEARCH_EVENTS: Dict[str, asyncio.Event] = {}
 _SEARCH_EVENTS_LOCK = asyncio.Lock()
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_PROJECT_ROOT = str(Path(__file__).parents[2])
 
 
 async def enqueue_search_and_wait(search_task_id: str, user_id: str) -> None:

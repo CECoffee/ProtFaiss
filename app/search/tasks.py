@@ -149,6 +149,10 @@ async def _legacy_background_task(
             },
         })
 
+        # Persist hits to DB (fire-and-forget; failure is logged, never raised)
+        from app.search.history_db import blocking_save_search_hits
+        await loop.run_in_executor(BLOCKING_EXECUTOR, blocking_save_search_hits, task_id, out)
+
         if user_id and dataset_id:
             await vram_timer.reset_timer(user_id, dataset_id)
 
