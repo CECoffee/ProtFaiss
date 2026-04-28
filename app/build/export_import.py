@@ -100,12 +100,8 @@ def blocking_export_dataset(
     Returns output_path on success.
     """
     import py7zr
-    from app.core import config_loader
-    from app.core.config import DATASETS_ROOT as _DATASETS_ROOT_DEFAULT
-    index_dir = os.path.join(
-        config_loader.get("storage", "datasets_root", "") or _DATASETS_ROOT_DEFAULT,
-        dataset_id, "indices",
-    )
+    from app.core.config_loader import get_datasets_root
+    index_dir = os.path.join(get_datasets_root(), dataset_id, "indices")
 
     # Collect index files (sorted for reproducibility)
     index_files: List[str] = []

@@ -7,6 +7,7 @@ import asyncio
 from app.daemon.handler import register, HandlerError
 from app.search.tasks import submit_task, get_task, remove_task, BLOCKING_EXECUTOR
 from app.build.dataset_db import blocking_get_user_active_id, blocking_get_dataset
+from app.search.history_db import blocking_get_search_history, blocking_get_search_hits
 
 
 @register("search.submit")
@@ -81,7 +82,6 @@ async def search_history_list(params: dict, context: dict) -> dict:
     limit = int(params.get("limit", 20))
     offset = int(params.get("offset", 0))
 
-    from app.search.history_db import blocking_get_search_history
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(
         BLOCKING_EXECUTOR, blocking_get_search_history, user_id, role, limit, offset
@@ -101,7 +101,7 @@ async def search_history_detail(params: dict, context: dict) -> dict:
     from app.core.db import get_pool
     pool = get_pool()
 
-    def _fetch_task_meta():
+    def _fetch_meta_and_hits():
         conn = pool.getconn()
         try:
             with conn.cursor() as cur:
@@ -115,21 +115,26 @@ async def search_history_detail(params: dict, context: dict) -> dict:
                     """,
                     (search_task_id,),
                 )
-                return cur.fetchone()
+                row = cur.fetchone()
+                if row is None:
+                    return None
+
+                task_user_id, dataset_id, submitted_at, completed_at, gpu_seconds, dataset_name, db_table = row
+
+                hits = blocking_get_search_hits(search_task_id, db_table)
+                return (task_user_id, dataset_id, submitted_at, completed_at,
+                        gpu_seconds, dataset_name, db_table, hits)
         finally:
             pool.putconn(conn)
 
-    row = await loop.run_in_executor(BLOCKING_EXECUTOR, _fetch_task_meta)
-    if row is None:
+    result = await loop.run_in_executor(BLOCKING_EXECUTOR, _fetch_meta_and_hits)
+    if result is None:
         raise HandlerError(404, "search task not found")
 
-    task_user_id, dataset_id, submitted_at, completed_at, gpu_seconds, dataset_name, db_table = row
+    task_user_id, dataset_id, submitted_at, completed_at, gpu_seconds, dataset_name, db_table, hits = result
 
     if str(task_user_id) != str(user_id) and role != "admin":
         raise HandlerError(403, "Access denied")
-
-    from app.search.history_db import blocking_get_search_hits
-    hits = await loop.run_in_executor(BLOCKING_EXECUTOR, blocking_get_search_hits, search_task_id, db_table)
 
     return {
         "search_task_id": search_task_id,

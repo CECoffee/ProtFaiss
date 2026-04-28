@@ -143,8 +143,8 @@ def _blocking_set_task_done(
 
 
 def _blocking_get_dataset_config_path(dataset_id: str) -> Optional[str]:
-    from app.core.config import DATASETS_ROOT
-    config_path = os.path.join(DATASETS_ROOT, dataset_id, "build_config.json")
+    from app.core.config_loader import get_datasets_root
+    config_path = os.path.join(get_datasets_root(), dataset_id, "build_config.json")
     return config_path if os.path.exists(config_path) else None
 
 

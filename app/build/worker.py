@@ -32,8 +32,7 @@ def run_build_job(config: dict) -> None:
         blocking_build_hnsw, fasta_data_iterator,
     )
     from app.core import encoder as _encoder
-    from app.core import config_loader
-    from app.core.config import DATASETS_ROOT as _DATASETS_ROOT_DEFAULT
+    from app.core.config_loader import get_datasets_root
 
     dataset_id = config["dataset_id"]
     db_table = config["db_table"]
@@ -47,7 +46,7 @@ def run_build_job(config: dict) -> None:
     # Reconstruct paths from dataset_id using this worker's configured datasets_root.
     # The paths in config may be Windows-style paths from the control plane,
     # unusable on Linux/WSL workers.
-    _datasets_root = config_loader.get("storage", "datasets_root", "") or _DATASETS_ROOT_DEFAULT
+    _datasets_root = get_datasets_root()
     index_dir = os.path.join(_datasets_root, dataset_id, "indices")
     fasta_path = os.path.join(_datasets_root, dataset_id, "input.fasta")
 

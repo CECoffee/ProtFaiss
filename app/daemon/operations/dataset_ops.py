@@ -14,7 +14,7 @@ from app.build.dataset_db import (
     blocking_set_user_active_dataset,
 )
 from app.build.db_operations import blocking_drop_table
-from app.core.config import DATASETS_ROOT
+from app.core.config_loader import get_datasets_root
 from app.search import vram_timer
 
 
@@ -83,7 +83,7 @@ async def dataset_delete(params: dict, context: dict) -> dict:
         except subprocess.TimeoutExpired:
             proc.kill()
 
-    dataset_dir = os.path.join(DATASETS_ROOT, dataset_id)
+    dataset_dir = os.path.join(get_datasets_root(), dataset_id)
     if os.path.isdir(dataset_dir):
         shutil.rmtree(dataset_dir, ignore_errors=True)
 

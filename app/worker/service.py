@@ -19,6 +19,7 @@ from app.core import config_loader
 from app.core.redis_client import task_update_fields, TASK_TTL
 from app.daemon.protocol import read_message, write_message, make_response
 from app.search.config import THREADPOOL_WORKERS
+from app.search.history_db import blocking_save_search_hits
 
 _EXECUTOR = ThreadPoolExecutor(max_workers=THREADPOOL_WORKERS)
 _server: Optional[asyncio.Server] = None
@@ -124,12 +125,11 @@ async def _run_search(task_id: str, params: dict) -> None:
         }
         await task_update_fields(task_id, result_update)
 
-        # Persist hits to DB (fire-and-forget; failure is logged, never raised)
-        from app.search.history_db import blocking_save_search_hits
-        await loop.run_in_executor(_EXECUTOR, blocking_save_search_hits, task_id, out)
-
         if user_id and dataset_id:
             await reset_timer(user_id, dataset_id)
+
+        # Persist hits to DB after GPU resources are released
+        await loop.run_in_executor(_EXECUTOR, blocking_save_search_hits, task_id, out)
 
     except Exception as e:
         task_status = "failed"

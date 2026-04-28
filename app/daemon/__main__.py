@@ -28,8 +28,9 @@ Shutdown sequence:
 import asyncio
 import os
 
-from app.core.config import DATASETS_ROOT, ESM2_MODEL_DIR
+from app.core.config import ESM2_MODEL_DIR
 from app.core import config_loader
+from app.core.config_loader import get_datasets_root
 from app.daemon.lifecycle import write_pid, remove_pid, register_signal_handlers
 from app.daemon.server import start_server, stop_server
 
@@ -50,7 +51,7 @@ async def _run():
 
     # Resolve storage paths: config.yml storage.* overrides hardcoded defaults
     model_dir = config_loader.get("storage", "models_root", "") or ESM2_MODEL_DIR
-    datasets_root = config_loader.get("storage", "datasets_root", "") or DATASETS_ROOT
+    datasets_root = get_datasets_root()
 
     if not cluster:
         # Legacy: init GPU + ESM2 on the daemon process itself

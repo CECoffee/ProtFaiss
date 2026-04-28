@@ -129,3 +129,9 @@ def get(section: str, key: str, default: Any = None) -> Any:
     """便捷访问：get("search", "faiss_search_workers") → 8"""
     cfg = get_config()
     return cfg.get(section, {}).get(key, default)
+
+
+def get_datasets_root() -> str:
+    """Return the configured datasets root directory, falling back to the default."""
+    from app.core.config import DATASETS_ROOT
+    return get("storage", "datasets_root", "") or DATASETS_ROOT

@@ -76,43 +76,29 @@ async def gpu_history(params: dict, context: dict) -> dict:
 
     limit = min(params.get("limit", 50), 500)
     offset = params.get("offset", 0)
-    status_filter = params.get("status_filter")
-    task_type_filter = params.get("task_type_filter")
-    task_id_filter = params.get("task_id_filter")
-    username_filter = params.get("username_filter")
-    start_date = params.get("start_date")
-    end_date = params.get("end_date")
 
     loop = asyncio.get_event_loop()
 
     if is_admin:
         result = await loop.run_in_executor(
             BLOCKING_EXECUTOR, blocking_get_full_history,
-            limit, offset, status_filter, task_type_filter, task_id_filter, username_filter, start_date, end_date
+            limit, offset,
+            params.get("status_filter"),
+            params.get("task_type_filter"),
+            params.get("task_id_filter"),
+            params.get("username_filter"),
+            params.get("start_date"),
+            params.get("end_date"),
         )
     else:
         result = await loop.run_in_executor(
             BLOCKING_EXECUTOR, blocking_get_history_for_user,
-            user_id, limit, offset, status_filter, task_type_filter, task_id_filter, start_date, end_date
+            user_id, limit, offset,
+            params.get("status_filter"),
+            params.get("task_type_filter"),
+            params.get("task_id_filter"),
+            params.get("start_date"),
+            params.get("end_date"),
         )
 
-    return result
-
-
-@register("gpu.admin_history")
-async def gpu_admin_history(params: dict, context: dict) -> dict:
-    limit = min(params.get("limit", 50), 500)
-    offset = params.get("offset", 0)
-    status_filter = params.get("status_filter")
-    task_type_filter = params.get("task_type_filter")
-    task_id_filter = params.get("task_id_filter")
-    username_filter = params.get("username_filter")
-    start_date = params.get("start_date")
-    end_date = params.get("end_date")
-
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(
-        BLOCKING_EXECUTOR, blocking_get_full_history,
-        limit, offset, status_filter, task_type_filter, task_id_filter, username_filter, start_date, end_date
-    )
     return result

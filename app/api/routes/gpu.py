@@ -14,6 +14,24 @@ async def _call(method, params, context):
         raise HTTPException(status_code=e.code, detail=e.message)
 
 
+def _build_history_params(limit, offset, status_filter, task_type_filter,
+                          task_id_filter, username_filter, start_date, end_date):
+    params = {"limit": limit, "offset": offset}
+    if status_filter:
+        params["status_filter"] = status_filter.split(",")
+    if task_type_filter:
+        params["task_type_filter"] = task_type_filter
+    if task_id_filter:
+        params["task_id_filter"] = task_id_filter
+    if username_filter:
+        params["username_filter"] = username_filter
+    if start_date:
+        params["start_date"] = start_date
+    if end_date:
+        params["end_date"] = end_date
+    return params
+
+
 @router.get("/gpu/queue")
 async def gpu_queue(user: dict = Depends(get_current_user)):
     ctx = {"source": "api", "user_id": user["id"], "role": user["role"]}
@@ -51,19 +69,10 @@ async def gpu_history(
     user: dict = Depends(get_current_user)
 ):
     ctx = {"source": "api", "user_id": user["id"], "role": user["role"]}
-    params = {"limit": limit, "offset": offset}
-    if status_filter:
-        params["status_filter"] = status_filter.split(",")
-    if task_type_filter:
-        params["task_type_filter"] = task_type_filter
-    if task_id_filter:
-        params["task_id_filter"] = task_id_filter
-    if username_filter:
-        params["username_filter"] = username_filter
-    if start_date:
-        params["start_date"] = start_date
-    if end_date:
-        params["end_date"] = end_date
+    params = _build_history_params(
+        limit, offset, status_filter, task_type_filter,
+        task_id_filter, username_filter, start_date, end_date,
+    )
     return await _call("gpu.history", params, ctx)
 
 
@@ -80,17 +89,8 @@ async def admin_gpu_history(
     admin: dict = Depends(require_admin)
 ):
     ctx = {"source": "api", "user_id": admin["id"], "role": "admin"}
-    params = {"limit": limit, "offset": offset}
-    if status_filter:
-        params["status_filter"] = status_filter.split(",")
-    if task_type_filter:
-        params["task_type_filter"] = task_type_filter
-    if task_id_filter:
-        params["task_id_filter"] = task_id_filter
-    if username_filter:
-        params["username_filter"] = username_filter
-    if start_date:
-        params["start_date"] = start_date
-    if end_date:
-        params["end_date"] = end_date
-    return await _call("gpu.admin_history", params, ctx)
+    params = _build_history_params(
+        limit, offset, status_filter, task_type_filter,
+        task_id_filter, username_filter, start_date, end_date,
+    )
+    return await _call("gpu.history", params, ctx)

@@ -19,6 +19,7 @@ from typing import Optional
 
 from app.core import config_loader
 from app.core.redis_client import task_set, task_get, task_delete, task_update_fields, TASK_TTL
+from app.search.history_db import blocking_save_search_hits
 from .config import THREADPOOL_WORKERS, MAX_CONCURRENT_ENCODINGS
 
 BLOCKING_EXECUTOR = ThreadPoolExecutor(max_workers=THREADPOOL_WORKERS)
@@ -149,10 +150,6 @@ async def _legacy_background_task(
             },
         })
 
-        # Persist hits to DB (fire-and-forget; failure is logged, never raised)
-        from app.search.history_db import blocking_save_search_hits
-        await loop.run_in_executor(BLOCKING_EXECUTOR, blocking_save_search_hits, task_id, out)
-
         if user_id and dataset_id:
             await vram_timer.reset_timer(user_id, dataset_id)
 
@@ -161,6 +158,9 @@ async def _legacy_background_task(
         await loop.run_in_executor(
             BLOCKING_EXECUTOR, blocking_release_search_slot, task_id, user_id, gpu_seconds
         )
+
+        # Persist hits to DB after GPU resources are released
+        await loop.run_in_executor(BLOCKING_EXECUTOR, blocking_save_search_hits, task_id, out)
 
     except Exception as e:
         await task_update_fields(task_id, {"status": "error", "error": str(e)})

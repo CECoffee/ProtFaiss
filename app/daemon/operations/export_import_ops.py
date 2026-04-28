@@ -29,12 +29,8 @@ from app.search.tasks import BLOCKING_EXECUTOR
 from app.build.dataset_db import (
     blocking_create_dataset, blocking_get_dataset,
 )
-from app.core.config import DATASETS_ROOT as _DATASETS_ROOT_DEFAULT
 from app.core import config_loader
-
-
-def _get_datasets_root() -> str:
-    return config_loader.get("storage", "datasets_root", "") or _DATASETS_ROOT_DEFAULT
+from app.core.config_loader import get_datasets_root
 
 _PROJECT_ROOT = str(Path(__file__).parents[3])
 
@@ -126,15 +122,14 @@ async def dataset_export(params: dict, context: dict) -> dict:
     if existing and existing.proc.poll() is None:
         raise HandlerError(409, "Export already in progress for this dataset")
 
-    datasets_root = _get_datasets_root()
+    datasets_root = get_datasets_root()
     output_path = os.path.join(datasets_root, dataset_id, "export.7z")
 
     # Remove stale export if present
-    if os.path.isfile(output_path):
-        try:
-            os.remove(output_path)
-        except OSError:
-            pass
+    try:
+        os.remove(output_path)
+    except FileNotFoundError:
+        pass
 
     job_config = {
         "job_type": "export",
@@ -169,7 +164,7 @@ async def dataset_export_status(params: dict, context: dict) -> dict:
         raise HandlerError(404, "Dataset not found")
     _check_access(entry, user_id, role)
 
-    output_path = os.path.join(_get_datasets_root(), dataset_id, "export.7z")
+    output_path = os.path.join(get_datasets_root(), dataset_id, "export.7z")
     proc_info = _ACTIVE_EXPORT_PROCESSES.get(dataset_id)
 
     if proc_info and proc_info.proc.poll() is None:
@@ -223,7 +218,7 @@ async def dataset_import(params: dict, context: dict) -> dict:
     # Create dataset directory and DB entry
     dataset_id = str(uuid.uuid4())
     short_id = dataset_id[:8]
-    dataset_dir = os.path.join(_get_datasets_root(), dataset_id)
+    dataset_dir = os.path.join(get_datasets_root(), dataset_id)
     index_dir = os.path.join(dataset_dir, "indices")
     fasta_path = os.path.join(dataset_dir, "input.fasta")
     db_table = f"proteins_{short_id}"

@@ -66,17 +66,17 @@ def blocking_get_search_history(
                 gt.submitted_at,
                 gt.completed_at,
                 gt.gpu_seconds,
-                (
-                    SELECT COUNT(*) FROM search_history_hits sh
-                    WHERE sh.search_task_id = gt.search_task_id
-                ) AS hit_count
+                COUNT(sh.rank) AS hit_count
             FROM gpu_tasks gt
             LEFT JOIN users u ON u.id = gt.user_id
             LEFT JOIN datasets d ON d.id = gt.dataset_id
+            LEFT JOIN search_history_hits sh ON sh.search_task_id = gt.search_task_id
             WHERE gt.task_type = 'search'
               AND gt.status = 'done'
               AND gt.search_task_id IS NOT NULL
               {user_filter}
+            GROUP BY gt.search_task_id, gt.user_id, u.username, gt.dataset_id,
+                     d.name, gt.submitted_at, gt.completed_at, gt.gpu_seconds
             ORDER BY gt.submitted_at DESC
             LIMIT %s OFFSET %s
             """,

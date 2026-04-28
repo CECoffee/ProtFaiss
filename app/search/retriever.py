@@ -104,11 +104,8 @@ def _load_shard_set(shard_dir: str) -> ShardSet:
 
 def get_or_load_shards(dataset_id: str) -> ShardSet:
     """Get ShardSet from LRU cache, loading if necessary."""
-    from app.core.config import DATASETS_ROOT as _DATASETS_ROOT_DEFAULT
-    index_dir = os.path.join(
-        config_loader.get("storage", "datasets_root", "") or _DATASETS_ROOT_DEFAULT,
-        dataset_id, "indices",
-    )
+    from app.core.config_loader import get_datasets_root
+    index_dir = os.path.join(get_datasets_root(), dataset_id, "indices")
     with _CACHE_LOCK:
         if dataset_id in _CACHE:
             _CACHE.move_to_end(dataset_id)
