@@ -26,7 +26,7 @@ def cmd_gpu(args: list[str]) -> None:
     for t in tasks:
         age = now - (t.get("created_at") or now)
         print(
-            f"  {str(t.get('task_id',''))[:10]:<12} {t.get('task_type',''):<8} "
+            f"  {str(t.get('id',''))[:10]:<12} {t.get('task_type',''):<8} "
             f"{t.get('status',''):<10} {str(t.get('user_id',''))[:10]:<12} {age:.0f}s"
         )
 
