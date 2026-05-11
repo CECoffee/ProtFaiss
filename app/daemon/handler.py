@@ -10,7 +10,7 @@ from typing import Any, Callable, Awaitable
 # Methods restricted to admin role
 _ADMIN_METHODS = {
     "user.list", "user.get", "user.update", "user.delete",
-    "gpu.cancel", "gpu.admin_queue",
+    "gpu.admin_queue",
     "config.reload", "config.get",
     "system.stats",
     "build.delete",

@@ -50,6 +50,12 @@ async def admin_gpu_queue(admin: dict = Depends(require_admin)):
     return await _call("gpu.admin_queue", {}, ctx)
 
 
+@router.post("/gpu/tasks/{task_id}/cancel")
+async def cancel_task(task_id: str, user: dict = Depends(get_current_user)):
+    ctx = {"source": "api", "user_id": user["id"], "role": user["role"]}
+    return await _call("gpu.cancel", {"task_id": task_id}, ctx)
+
+
 @router.post("/admin/gpu/tasks/{task_id}/cancel")
 async def admin_cancel_task(task_id: str, admin: dict = Depends(require_admin)):
     ctx = {"source": "api", "user_id": admin["id"], "role": "admin"}

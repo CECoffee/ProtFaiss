@@ -285,7 +285,6 @@ def blocking_get_full_queue() -> list:
                 "ORDER BY gt.priority ASC, gt.submitted_at ASC"
             )
             rows = cur.fetchall()
-            now = time.time()
             return [
                 {
                     "id": str(r[0]), "user_id": str(r[1]), "username": r[2],
@@ -296,7 +295,7 @@ def blocking_get_full_queue() -> list:
                     "submitted_at": r[9].isoformat() if r[9] else None,
                     "started_at": r[10].isoformat() if r[10] else None,
                     "completed_at": r[11].isoformat() if r[11] else None,
-                    "gpu_seconds": (now - r[10].timestamp()) if r[4] == "running" and r[10] is not None else r[12],
+                    "gpu_seconds": r[12],
                 }
                 for r in rows
             ]
@@ -415,38 +414,130 @@ def blocking_get_full_history(limit: int = 50, offset: int = 0,
         pool.putconn(conn)
 
 
-def blocking_cancel_task(task_id: str) -> bool:
+def blocking_get_task(task_id: str) -> Optional[dict]:
+    """Look up a single GPU task by ID."""
     pool = _get_db_pool()
     conn = pool.getconn()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE gpu_tasks SET status = 'cancelled' WHERE id = %s AND status = 'pending' "
-                "RETURNING id",
+                "SELECT id, user_id, task_type, status, dataset_id, search_task_id "
+                "FROM gpu_tasks WHERE id = %s",
                 (task_id,),
             )
             row = cur.fetchone()
-            conn.commit()
-            return row is not None
+            if not row:
+                return None
+            return {
+                "id": str(row[0]), "user_id": str(row[1]), "task_type": row[2],
+                "status": row[3],
+                "dataset_id": str(row[4]) if row[4] else None,
+                "search_task_id": row[5],
+            }
     finally:
         pool.putconn(conn)
 
 
+def blocking_cancel_task(task_id: str) -> bool:
+    """Cancel a GPU task — supports both 'pending' and 'running' status."""
+    pool = _get_db_pool()
+
+    # Step 1: look up the task
+    conn = pool.getconn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, task_type, status, dataset_id FROM gpu_tasks WHERE id = %s",
+                (task_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return False
+            task_type = row[1]
+            status = row[2]
+            dataset_id = str(row[3]) if row[3] else None
+    finally:
+        pool.putconn(conn)
+
+    # Step 2a: pending — simple status update
+    if status == "pending":
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE gpu_tasks SET status = 'cancelled' WHERE id = %s AND status = 'pending' "
+                    "RETURNING id",
+                    (task_id,),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return row is not None
+        finally:
+            pool.putconn(conn)
+
+    # Step 2b: running — terminate work, drop table, release slot
+    if status == "running":
+        from .gpu_pool import get_pool
+
+        if task_type == "build" and dataset_id:
+            # Terminate the build subprocess
+            proc = _BUILD_PROCS.pop(dataset_id, None)
+            if proc and proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+
+            # Drop the incomplete protein table
+            conn = pool.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT db_table FROM datasets WHERE id = %s",
+                        (dataset_id,),
+                    )
+                    db_row = cur.fetchone()
+                if db_row and db_row[0]:
+                    cur.execute(f'DROP TABLE IF EXISTS "{db_row[0]}"')
+                    conn.commit()
+            finally:
+                pool.putconn(conn)
+
+        # Update task status
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE gpu_tasks SET status = 'cancelled' WHERE id = %s",
+                    (task_id,),
+                )
+                conn.commit()
+        finally:
+            pool.putconn(conn)
+
+        # Release GPU slot and clean up scheduler bookkeeping
+        get_pool().release(task_id)
+        sched = get_scheduler()
+        if sched:
+            sched._start_times.pop(task_id, None)
+
+        return True
+
+    # Already done / failed / cancelled
+    return False
+
+
 def _task_row(r) -> dict:
-    status = r[2]
-    started = r[8]
-    gpu_seconds = r[10]
-    if status == "running" and started is not None:
-        gpu_seconds = time.time() - started.timestamp()
     return {
-        "id": str(r[0]), "task_type": r[1], "status": status, "priority": r[3],
+        "id": str(r[0]), "task_type": r[1], "status": r[2], "priority": r[3],
         "gpu_slots": r[4],
         "dataset_id": str(r[5]) if r[5] else None,
         "search_task_id": r[6],
         "submitted_at": r[7].isoformat() if r[7] else None,
-        "started_at": started.isoformat() if started else None,
+        "started_at": r[8].isoformat() if r[8] else None,
         "completed_at": r[9].isoformat() if r[9] else None,
-        "gpu_seconds": gpu_seconds,
+        "gpu_seconds": r[10],
     }
 
 

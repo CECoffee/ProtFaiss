@@ -7,8 +7,8 @@ import asyncio
 from app.daemon.handler import register, HandlerError
 from app.search.tasks import BLOCKING_EXECUTOR
 from app.scheduler.scheduler import (
-    blocking_get_queue_for_user, blocking_get_full_queue, blocking_cancel_task,
-    blocking_get_history_for_user, blocking_get_full_history
+    blocking_get_queue_for_user, blocking_get_full_queue, blocking_get_task,
+    blocking_cancel_task, blocking_get_history_for_user, blocking_get_full_history
 )
 from app.core import gpu as _gpu
 from app.core import config_loader
@@ -49,7 +49,18 @@ async def gpu_cancel(params: dict, context: dict) -> dict:
     task_id = params.get("task_id")
     if not task_id:
         raise HandlerError(400, "task_id required")
+
+    user_id = context.get("user_id")
+    role = context.get("role", "user")
     loop = asyncio.get_event_loop()
+
+    if role != "admin":
+        task = await loop.run_in_executor(BLOCKING_EXECUTOR, blocking_get_task, task_id)
+        if not task:
+            raise HandlerError(404, "Task not found")
+        if task["user_id"] != user_id:
+            raise HandlerError(403, "You can only cancel your own tasks")
+
     cancelled = await loop.run_in_executor(BLOCKING_EXECUTOR, blocking_cancel_task, task_id)
     if not cancelled:
         raise HandlerError(404, "Task not found or not cancellable")
