@@ -70,7 +70,7 @@ const queueColumns = computed(() => [
     title: t('system.col.actions'),
     key: 'actions',
     width: 100,
-    render: (r) => r.status === 'pending' ? h(NPopconfirm, {
+    render: (r) => r.status === 'pending' || r.status === 'running' ? h(NPopconfirm, {
       onPositiveClick: () => handleCancel(r.id),
     }, {
       trigger: () => h(NButton, { size: 'small', type: 'error', secondary: true }, { default: () => t('system.btn.cancel') }),

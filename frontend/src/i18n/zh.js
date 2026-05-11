@@ -149,6 +149,10 @@ export default {
   'gpu.col.started': '开始时间',
   'gpu.col.completed': '完成时间',
   'gpu.col.gpuSeconds': 'GPU 秒数',
+  'gpu.col.actions': '操作',
+  'gpu.btnCancel': '取消',
+  'gpu.confirmCancel': '确定取消此任务？',
+  'gpu.msgCancelled': '任务已取消',
 
   // LoginView
   'login.subtitle': '蛋白质序列相似性检索',

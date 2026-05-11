@@ -151,6 +151,10 @@ export default {
   'gpu.col.started': 'Started',
   'gpu.col.completed': 'Completed',
   'gpu.col.gpuSeconds': 'GPU Seconds',
+  'gpu.col.actions': 'Actions',
+  'gpu.btnCancel': 'Cancel',
+  'gpu.confirmCancel': 'Cancel this task?',
+  'gpu.msgCancelled': 'Task cancelled',
 
   // LoginView
   'login.subtitle': 'Protein Sequence Similarity Search',

@@ -79,9 +79,15 @@ export const useGpuStore = defineStore('gpu', () => {
     }
   }
 
+  async function cancelTask(taskId) {
+    const resp = await client.post(`/gpu/tasks/${taskId}/cancel`)
+    return resp.data
+  }
+
   return {
     queue, pool, loading, gpuAvailable, fetchQueue,
     historyTasks, historyTotal, historyHasMore, historyLoading, historyFilters,
-    fetchHistory, setHistoryFilters, resetHistoryFilters
+    fetchHistory, setHistoryFilters, resetHistoryFilters,
+    cancelTask
   }
 })

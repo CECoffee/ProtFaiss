@@ -121,7 +121,7 @@
 
 <script setup>
 import { computed, h, onMounted, onUnmounted, ref } from 'vue'
-import { NTag } from 'naive-ui'
+import { NTag, NButton, NPopconfirm } from 'naive-ui'
 import { useGpuStore } from '../stores/gpu'
 import { useAuthStore } from '../stores/auth'
 import { useI18n } from '../i18n/index.js'
@@ -179,7 +179,18 @@ const activeColumns = computed(() => [
   { title: t('gpu.col.slots'), key: 'gpu_slots', width: 90 },
   { title: t('gpu.col.submitted'), key: 'submitted_at', width:160, render: (r) => r.submitted_at ? new Date(r.submitted_at).toLocaleString() : '—' },
   { title: t('gpu.col.started'), key: 'started_at', width:160, render: (r) => r.started_at ? new Date(r.started_at).toLocaleString() : '—' },
-  { title: t('gpu.col.gpuSeconds'), key: 'gpu_seconds', width: 110, render: (r) => r.gpu_seconds?.toFixed(1) || '—' }
+  { title: t('gpu.col.gpuSeconds'), key: 'gpu_seconds', width: 110, render: (r) => r.gpu_seconds?.toFixed(1) || '—' },
+  {
+    title: t('gpu.col.actions'),
+    key: 'actions',
+    width: 80,
+    render: (r) => (r.status === 'pending' || r.status === 'running') ? h(NPopconfirm, {
+      onPositiveClick: () => handleCancel(r.id),
+    }, {
+      trigger: () => h(NButton, { size: 'small', type: 'error', secondary: true }, { default: () => t('gpu.btnCancel') }),
+      default: () => t('gpu.confirmCancel'),
+    }) : null,
+  }
 ])
 
 const historyColumns = computed(() => {
@@ -258,6 +269,16 @@ function handlePageChange(page) {
 function handlePageSizeChange(pageSize) {
   gpuStore.setHistoryFilters({ limit: pageSize, offset: 0 })
   gpuStore.fetchHistory()
+}
+
+async function handleCancel(id) {
+  try {
+    await gpuStore.cancelTask(id)
+    await gpuStore.fetchQueue()
+    window.$message?.success(t('gpu.msgCancelled'))
+  } catch (e) {
+    window.$message?.error(e.response?.data?.detail || 'Cancel failed')
+  }
 }
 
 let timer = null
