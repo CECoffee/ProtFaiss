@@ -8,7 +8,6 @@ tools/insert_fasta_to_db.py — 将 FASTA 文件批量导入 PostgreSQL
   python tools/insert_fasta_to_db.py --fasta ../src/KEGG_test.fasta --table proteins --batch-size 500
 """
 import argparse
-import re
 import sys
 import os
 
@@ -34,61 +33,7 @@ args = parser.parse_args()
 # FASTA parsing
 # ---------------------------------------------------------------------------
 
-def parse_fasta_header(header_string: str):
-    accession = header_string
-    ko = None
-    ec = None
-
-    ko_match = re.search(r'KO:(K\d{5})', header_string)
-    if ko_match:
-        ko = ko_match.group(1)
-
-    ec_match = re.search(r'EC:([\d\.\-n]+)', header_string)
-    if ec_match:
-        ec = ec_match.group(1)
-
-    split_pos = -1
-    ko_pos = header_string.find('_KO:')
-    ec_pos = header_string.find('_EC:')
-
-    if ko_pos != -1 and ec_pos != -1:
-        split_pos = min(ko_pos, ec_pos)
-    elif ko_pos != -1:
-        split_pos = ko_pos
-    elif ec_pos != -1:
-        split_pos = ec_pos
-
-    if split_pos != -1:
-        accession = header_string[:split_pos]
-
-    return accession, ko, ec
-
-
-def fasta_data_iterator(fasta_file_path: str):
-    header = None
-    sequence_parts = []
-
-    with open(fasta_file_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            if line.startswith('>'):
-                if header:
-                    full_sequence = "".join(sequence_parts)
-                    original_header = header.lstrip('>')
-                    accession, ko, ec = parse_fasta_header(original_header)
-                    yield (original_header, accession, ko, ec, full_sequence, len(full_sequence), None)
-                header = line
-                sequence_parts = []
-            else:
-                sequence_parts.append(line)
-
-        if header:
-            full_sequence = "".join(sequence_parts)
-            original_header = header.lstrip('>')
-            accession, ko, ec = parse_fasta_header(original_header)
-            yield (original_header, accession, ko, ec, full_sequence, len(full_sequence), None)
+from app.build.index_builder import fasta_data_iterator
 
 
 # ---------------------------------------------------------------------------

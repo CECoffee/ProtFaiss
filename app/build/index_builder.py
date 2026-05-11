@@ -34,67 +34,92 @@ EMBEDDING_DIM = 1280
 # FASTA parsing helpers
 # ---------------------------------------------------------------------------
 
-def parse_fasta_header(header_string: str):
-    accession = header_string
-    ko = None
-    ec = None
+_UNIPROT_HEADER_RE = re.compile(
+    r'^([A-Za-z0-9]+)\|'        # database code (sp, tr, etc.)
+    r'([A-Za-z0-9_\-]+)\|'      # accession (with optional isoform dash)
+    r'(\S+)'                     # entry name (no spaces)
+    r'\s*(.*)$'                  # optional free-text description
+)
 
-    ko_match = re.search(r'KO:(K\d{5})', header_string)
-    if ko_match:
-        ko = ko_match.group(1)
+_UNIPROT_HEADER_EXAMPLE = ">sp|Q6GZX4|001R_FRG3G Putative transcription factor 001R ..."
 
-    ec_match = re.search(r'EC:([\d\.\-n]+)', header_string)
-    if ec_match:
-        ec = ec_match.group(1)
 
-    split_pos = -1
-    ko_pos = header_string.find('_KO:')
-    ec_pos = header_string.find('_EC:')
+def validate_uniprot_header(line: str, line_num: int) -> dict:
+    if not line.startswith('>'):
+        raise ValueError(
+            f"Line {line_num}: FASTA header must start with '>', "
+            f"got: {line[:80]}"
+        )
+    header = line[1:]
+    if not header.strip():
+        raise ValueError(
+            f"Line {line_num}: FASTA header is empty after '>'"
+        )
 
-    if ko_pos != -1 and ec_pos != -1:
-        split_pos = min(ko_pos, ec_pos)
-    elif ko_pos != -1:
-        split_pos = ko_pos
-    elif ec_pos != -1:
-        split_pos = ec_pos
+    m = _UNIPROT_HEADER_RE.match(header)
+    if not m:
+        raise ValueError(
+            f"Line {line_num}: Invalid UniProt header format.\n"
+            f"  Got: {line.strip()[:120]}\n"
+            f"  Expected: >db|Accession|EntryName Description\n"
+            f"  Example: {_UNIPROT_HEADER_EXAMPLE}"
+        )
 
-    if split_pos != -1:
-        accession = header_string[:split_pos]
+    return {
+        "db": m.group(1),
+        "accession": m.group(2),
+        "entry_name": m.group(3),
+        "description": m.group(4) or "",
+    }
 
-    return accession, ko, ec
+
+def parse_fasta_header(header_string: str) -> tuple:
+    parsed = validate_uniprot_header(f">{header_string}", 0)
+    return parsed["accession"], None, None
 
 
 def fasta_data_iterator(fasta_file_path: str):
     """
     Memory-efficient streaming FASTA iterator.
+    Validates every header against UniProt standard on first encounter.
+    Raises ValueError on invalid header (halting the build immediately).
+
     Yields: (original_header, accession, ko, ec, sequence, seq_len, ph_val)
     """
     header = None
     sequence_parts = []
+    parsed_header: dict = {}  # cached result from validate_uniprot_header (set with header)
+    line_num = 0
 
     with open(fasta_file_path, 'r', encoding='utf-8') as f:
         for line in f:
-            line = line.strip()
-            if not line:
+            line_num += 1
+            line_str = line.strip()
+            if not line_str:
                 continue
 
-            if line.startswith('>'):
+            if line_str.startswith('>'):
+                # Yield previous record
                 if header:
                     full_sequence = "".join(sequence_parts)
                     original_header = header.lstrip('>')
-                    accession, ko, ec = parse_fasta_header(original_header)
-                    yield (original_header, accession, ko, ec, full_sequence, len(full_sequence), None)
+                    accession = parsed_header["accession"]
+                    yield (original_header, accession, None, None,
+                           full_sequence, len(full_sequence), None)
 
-                header = line
+                # Validate new header immediately (real-time detection)
+                parsed_header = validate_uniprot_header(line_str, line_num)
+                header = line_str
                 sequence_parts = []
             else:
-                sequence_parts.append(line)
+                sequence_parts.append(line_str)
 
         if header:
             full_sequence = "".join(sequence_parts)
             original_header = header.lstrip('>')
-            accession, ko, ec = parse_fasta_header(original_header)
-            yield (original_header, accession, ko, ec, full_sequence, len(full_sequence), None)
+            accession = parsed_header["accession"]
+            yield (original_header, accession, None, None,
+                   full_sequence, len(full_sequence), None)
 
 
 # ---------------------------------------------------------------------------
