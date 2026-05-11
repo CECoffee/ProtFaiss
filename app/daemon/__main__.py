@@ -7,15 +7,16 @@ Startup sequence (legacy mode, cluster.enabled=false):
   3. Init DB pool + Redis
   4. Run DB migration + ensure admin user
   5. Init GPU pool
-  6. Start GPU scheduler
-  7. Mark stale 'building' datasets as error
-  8. Write PID file
-  9. Start IPC TCP server
- 10. Run asyncio event loop until shutdown signal
+  6. Reset stale 'running' GPU tasks as failed
+  7. Start GPU scheduler
+  8. Mark stale 'building' datasets as error
+  9. Write PID file
+ 10. Start IPC TCP server
+ 11. Run asyncio event loop until shutdown signal
 
 Startup sequence (cluster mode, cluster.enabled=true):
   Steps 1-2 are SKIPPED (GPU work runs on worker nodes).
-  Steps 3-10 run as before, but using ClusterGpuPool + WorkerRegistry instead of
+  Steps 3-11 run as before, but using ClusterGpuPool + WorkerRegistry instead of
   GpuPool. Workers self-register via IPC after startup.
 
 Shutdown sequence:
@@ -77,6 +78,12 @@ async def _run():
         total_slots = config_loader.get("scheduler", "total_gpu_slots", 4)
         init_pool(total_slots)
         print(f"[daemon] GPU pool initialized with {total_slots} slots")
+
+    # Mark stale GPU tasks as failed (daemon restart)
+    from app.scheduler.scheduler import blocking_reset_running_tasks
+    count = blocking_reset_running_tasks()
+    if count:
+        print(f"[daemon] Marked {count} stale GPU task(s) as failed")
 
     scheduler = init_scheduler()
     scheduler.start()

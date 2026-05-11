@@ -438,6 +438,38 @@ def blocking_get_task(task_id: str) -> Optional[dict]:
         pool.putconn(conn)
 
 
+def blocking_reset_running_tasks() -> int:
+    """Mark all running GPU tasks as failed on daemon restart.
+
+    Also drops incomplete protein tables for running build tasks.
+    Returns the number of tasks reset.
+    """
+    pool = _get_db_pool()
+    conn = pool.getconn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT gt.id, d.db_table "
+                "FROM gpu_tasks gt "
+                "LEFT JOIN datasets d ON d.id = gt.dataset_id "
+                "WHERE gt.status = 'running' AND gt.task_type = 'build'"
+            )
+            for task_id, db_table in cur.fetchall():
+                if db_table:
+                    cur.execute(f'DROP TABLE IF EXISTS "{db_table}"')
+
+            cur.execute(
+                "UPDATE gpu_tasks SET status = 'failed', completed_at = now(), "
+                "error_msg = 'Daemon restarted during task execution' "
+                "WHERE status = 'running'"
+            )
+            count = cur.rowcount
+            conn.commit()
+            return count
+    finally:
+        pool.putconn(conn)
+
+
 def blocking_cancel_task(task_id: str) -> bool:
     """Cancel a GPU task — supports both 'pending' and 'running' status."""
     pool = _get_db_pool()
