@@ -285,6 +285,7 @@ def blocking_get_full_queue() -> list:
                 "ORDER BY gt.priority ASC, gt.submitted_at ASC"
             )
             rows = cur.fetchall()
+            now = time.time()
             return [
                 {
                     "id": str(r[0]), "user_id": str(r[1]), "username": r[2],
@@ -295,7 +296,7 @@ def blocking_get_full_queue() -> list:
                     "submitted_at": r[9].isoformat() if r[9] else None,
                     "started_at": r[10].isoformat() if r[10] else None,
                     "completed_at": r[11].isoformat() if r[11] else None,
-                    "gpu_seconds": r[12],
+                    "gpu_seconds": (now - r[10].timestamp()) if r[4] == "running" and r[10] is not None else r[12],
                 }
                 for r in rows
             ]
@@ -432,15 +433,20 @@ def blocking_cancel_task(task_id: str) -> bool:
 
 
 def _task_row(r) -> dict:
+    status = r[2]
+    started = r[8]
+    gpu_seconds = r[10]
+    if status == "running" and started is not None:
+        gpu_seconds = time.time() - started.timestamp()
     return {
-        "id": str(r[0]), "task_type": r[1], "status": r[2], "priority": r[3],
+        "id": str(r[0]), "task_type": r[1], "status": status, "priority": r[3],
         "gpu_slots": r[4],
         "dataset_id": str(r[5]) if r[5] else None,
         "search_task_id": r[6],
         "submitted_at": r[7].isoformat() if r[7] else None,
-        "started_at": r[8].isoformat() if r[8] else None,
+        "started_at": started.isoformat() if started else None,
         "completed_at": r[9].isoformat() if r[9] else None,
-        "gpu_seconds": r[10],
+        "gpu_seconds": gpu_seconds,
     }
 
 
